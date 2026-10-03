@@ -620,8 +620,12 @@ let pendingReset = null;
 function playChunk(b64) {
   if (!ctx || !playing) return;
   const buf = decode(b64);
-  if (pendingReset) {                                              // new context: start it after the buffered audio, bar 1 there
-    const t = Math.max(nextTime, ctx.currentTime + 0.3);
+  if (pendingReset) {                                              // new context (tempo/key): flush the old queue, quick fade, bar 1 right away
+    const t = ctx.currentTime + 1.0, d = duck.gain;                    // 1 s cushion: old groove plays until t, then the new one (no underrun)
+    d.cancelScheduledValues(0); d.setValueAtTime(1, t - 0.06); d.linearRampToValueAtTime(0, t - 0.01); d.linearRampToValueAtTime(1, t + 0.03);
+    queued.forEach(q => { try { q.src.stop(t); } catch {} }); queued.length = 0;
+    for (let i = wave.length - 1; i >= 0; i--) if (wave[i].t >= t) wave.splice(i, 1); else wave[i].end = Math.min(wave[i].end, t);
+    buildSrcs.forEach(src => { try { src.stop(t); } catch {} }); buildSrcs = []; plannedDrop = null;
     clockStart = nextTime = t; bpmClock = next.bpm; hist.fill(0); histN = 0; hold = null; pendingLand = null;
     marks.length = segments.length = 0; segments.push({ startBeat: 0, moment: pendingReset }); pendingReset = null;
   }
@@ -644,8 +648,10 @@ function playChunk(b64) {
   schedule(buf, nextTime);
   nextTime += buf.duration;
 }
+const queued = [];                                               // scheduled sources, so a restart can flush them
 function schedule(buf, t, fadeIn) {
   const src = ctx.createBufferSource(); src.buffer = buf;
+  queued.push({ src, end: t + buf.duration }); while (queued.length && queued[0].end < ctx.currentTime - 1) queued.shift();
   if (fadeIn) { const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(1, t + .004); src.connect(g).connect(hp); }
   else src.connect(hp);
   src.start(t);
@@ -841,6 +847,7 @@ async function togglePlay() {
   if (playing) { session.pause(); playing = false; hold = null; wave.length = 0; nextTime = 0; clockStart = 0; marks.length = segments.length = 0; $("#playBtn").textContent = "▶"; $("#playBtn").classList.remove("on"); setMsg("Paused", ""); return; }
   playing = true; lastBar = -1; $("#playBtn").textContent = "❚❚"; $("#playBtn").classList.add("on");
   segments.push({ startBeat: 0, moment: live?.moment || next.moment });
+  if (live && (live.bpm !== next.bpm || live.scale !== next.scale)) await send(true);   // tempo/key changed while paused
   session.play();
 }
 
@@ -1432,7 +1439,14 @@ function popToggle(id, show) {
 $("#keyBtn").onclick = e => { e.stopPropagation(); popToggle("#keyPop"); };
 $("#hdrInfo").onclick = e => { e.stopPropagation(); popToggle("#bpmPop"); };
 // tempo: stepper, slider, presets (Lyria range is 60–200; 90–160 covers house → hard techno)
-const setBpm = v => { next.bpm = Math.max(90, Math.min(160, Math.round(v))); refresh(); };
+// Tempo restarts the groove anyway (Lyria needs a context reset), so don't make it wait for the bar
+// boundary: send ~0.7 s after the last tap. While paused it's sent when you press play.
+let bpmTimer = null;
+const setBpm = v => {
+  next.bpm = Math.max(90, Math.min(160, Math.round(v))); refresh();
+  clearTimeout(bpmTimer);
+  bpmTimer = setTimeout(() => { if (playing && live && live.bpm !== next.bpm) send(); }, 700);
+};
 $$(".bpmstep").forEach(b => b.onclick = () => setBpm(next.bpm + +b.dataset.d));
 $("#bpmRange").oninput = e => setBpm(+e.target.value);
 $("#bpmPresets").innerHTML = [120, 124, 126, 128, 130, 132, 135, 140].map(v => `<button data-v="${v}">${v}</button>`).join("");
