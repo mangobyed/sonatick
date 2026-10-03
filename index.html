@@ -568,7 +568,6 @@ function saveKey() { try { localStorage.setItem("lyria_apiver", $("#apiVersion")
 
 /* ---------- connect ---------- */
 $("#connectBtn").onclick = async () => {
-  unlockAudio();                                                  // first tap: claim the iPhone audio session early
   if (session) { try { session.close(); } catch {} return offline(); }
   saveKey(); status("connecting…", "busy");
   let apiKey;
@@ -810,22 +809,9 @@ function holdTick() { holdStep(); }
 
 $("#vol").oninput = e => { $("#volV").textContent = Math.round(e.target.value * 100) + "%"; if (gain) gain.gain.value = +e.target.value; };
 
-/* iPhone: Web Audio follows the ring/silent switch and gets suspended on interruptions.
-   On the first tap, move the page into the "playback" audio session (ignores the silent switch):
-   navigator.audioSession where supported, plus a looping silent <audio> element for older iOS. */
-let silentEl = null;
-function unlockAudio() {
-  if (navigator.audioSession) { try { navigator.audioSession.type = "playback"; } catch {} }
-  else if (!silentEl) {                                           // older iOS only: silent loop to leave the "ambient" session
-    const n = 4000, b = new ArrayBuffer(44 + n * 2), v = new DataView(b), w = (o, t) => [...t].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
-    w(0, "RIFF"); v.setUint32(4, 36 + n * 2, true); w(8, "WAVEfmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
-    v.setUint32(24, 8000, true); v.setUint32(28, 16000, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, "data"); v.setUint32(40, n * 2, true);
-    silentEl = new Audio(URL.createObjectURL(new Blob([b], { type: "audio/wav" })));
-    silentEl.loop = true; silentEl.setAttribute("playsinline", ""); silentEl.volume = 0.01;
-  }
-  if (silentEl) silentEl.play().catch(() => {});
-  if (ctx && ctx.state !== "running") ctx.resume().catch(() => {});
-}
+/* Audio start exactly as in the first deployment (which played on iPhone): plain AudioContext at 48 kHz,
+   created inside the tap. Only extra: resume it if iOS suspends it. Note: the iPhone silent switch mutes Web Audio. */
+function unlockAudio() { if (ctx && ctx.state !== "running") ctx.resume().catch(() => {}); }
 // iOS suspends/interrupts the context (lock screen, calls, app switch): resume on the next touch or when the page is back
 document.addEventListener("pointerdown", () => { if (playing) unlockAudio(); }, true);
 document.addEventListener("visibilitychange", () => { if (!document.hidden && playing && ctx) ctx.resume().catch(() => {}); });
@@ -833,9 +819,8 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden && pl
 $("#playBtn").onclick = togglePlay;
 async function togglePlay() {
   if (!session) return;
-  unlockAudio();                                                  // must run inside the tap, before any await
   if (!ctx) {
-    ctx = new (window.AudioContext || window.webkitAudioContext)();     // hardware rate; Lyria's 48 kHz buffers are resampled (forcing 48k can go silent on iPhone)
+    ctx = new AudioContext({ sampleRate: SR });
     // hp (build thinning/riser) → sub low-shelf → dry + saturated wet → glue comp → duck (pump/gate) → boost → limiter → volume
     hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 10; hp.Q.value = 4;
     sub = ctx.createBiquadFilter(); sub.type = "lowshelf"; sub.frequency.value = 90; sub.gain.value = 0;
@@ -1341,7 +1326,8 @@ function nextBoundaryBeat(b) { if (planned()) return plannedDrop; const q = quan
 function loop() {
   requestAnimationFrame(loop);
   const b = nowBeat();
-  if (b >= 0) {
+  if (playing && ctx && ctx.state !== "running") setMsg(`Audio is ${ctx.state}`, "tap anywhere to resume · on iPhone check the silent switch");
+  else if (b >= 0) {
     const bar = Math.floor(b / 4);
     $("#clock").textContent = `bar ${bar + 1}.${Math.floor(b % 4) + 1}`;
     // Send a little before the boundary so the new audio lands close to it:
