@@ -70,6 +70,19 @@
   .popbox { position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; width: 440px; max-width: 92vw; background: #000; border: 1px solid #fff; padding: 18px; box-shadow: 12px 12px 0 rgba(255,255,255,.06); }
   .popbox[hidden] { display: none; }
   .pophead { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px; }
+  /* tempo popover */
+  .bpmpop { width: 360px; }
+  .bpmrow { display: flex; align-items: center; justify-content: space-between; margin: 4px 0 14px; }
+  .bpmbig { font: 200 64px/1 var(--mono); letter-spacing: -.04em; } .bpmbig.staged { text-decoration: underline dashed 2px; text-underline-offset: 10px; }
+  .bpmstep { width: 56px; height: 56px; border: 1px solid var(--line2); font: 300 30px/1 var(--mono); } .bpmstep:hover { background: #fff; color: #000; border-color: #fff; }
+  #bpmRange { -webkit-appearance: none; appearance: none; width: 100%; height: 26px; cursor: ew-resize;
+              background: repeating-linear-gradient(90deg, #333 0 1px, transparent 1px 10px) center / 100% 10px no-repeat; }
+  #bpmRange::-webkit-slider-thumb { -webkit-appearance: none; width: 10px; height: 26px; background: #fff; }
+  #bpmRange::-moz-range-thumb { width: 10px; height: 26px; border: 0; border-radius: 0; background: #fff; }
+  .bpmpresets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 14px; }
+  .bpmpresets button { height: 32px; border: 1px solid var(--line2); font: 500 12px var(--mono); color: var(--dim); }
+  .bpmpresets button:hover { color: #fff; border-color: #fff; } .bpmpresets button.on { background: #fff; color: #000; border-color: #fff; font-weight: 700; }
+  .tb.staged { border-style: dashed; border-color: #fff; animation: blink 1s steps(1) infinite; }
   .keys { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
   .keys button { height: 36px; border: 1px solid var(--line2); font: 500 11px var(--mono); letter-spacing: .06em; color: var(--dim); }
   .keys button:hover { color: #fff; border-color: #fff; }
@@ -178,6 +191,12 @@
   .layer .name:hover { color: #fff; }
   .layer.zero .name { text-decoration: line-through; }
   /* delete = PlayStation-style cross button: ring + crisp X, red on hover */
+  /* per-channel actions: dice (re-roll) + PlayStation-style delete */
+  .layer .acts { display: flex; gap: 10px; align-items: center; }
+  .layer .dice { width: 42px; height: 42px; border: 2px solid #3a3a3a; font: 400 26px/1 var(--mono); color: #9a9a9a; display: grid; place-items: center; padding-bottom: 3px; transition: background .08s, border-color .08s; }
+  .layer .dice:hover { background: #fff; border-color: #fff; color: #000; }
+  .layer .dice.roll { animation: roll .45s cubic-bezier(.5, 0, .3, 1); }
+  @keyframes roll { 0% { transform: rotate(0) scale(1); } 50% { transform: rotate(200deg) scale(.8); } 100% { transform: rotate(360deg) scale(1); } }
   .layer .x { position: relative; width: 42px; height: 42px; flex: 0 0 auto; border-radius: 50%; border: 2px solid #3a3a3a; font-size: 0; color: transparent;
               transition: background .08s, border-color .08s, transform .08s; }
   .layer .x::before, .layer .x::after { content: ""; position: absolute; left: 50%; top: 50%; width: 20px; height: 2.5px; border-radius: 2px; background: #9a9a9a; }
@@ -269,7 +288,15 @@
   <header class="topbar">
     <h1>Sonatick<span>//</span><small>Lyria RT</small></h1>
     <span class="status"><i id="dot" class="dot"></i><span id="statusTxt">offline</span></span>
-    <span class="tb mono" id="hdrInfo"></span>
+    <div class="pop">
+      <button class="tb mono" id="hdrInfo" aria-haspopup="true" title="Change tempo"></button>
+      <div class="popbox bpmpop" id="bpmPop" hidden>
+        <div class="pophead"><span class="lbl">Tempo · lands with the next chunk, restarts the groove</span></div>
+        <div class="bpmrow"><button class="bpmstep" data-d="-1" aria-label="Slower">−</button><span class="bpmbig mono" id="bpmBig">128</span><button class="bpmstep" data-d="1" aria-label="Faster">+</button></div>
+        <input type="range" id="bpmRange" min="90" max="160" step="1" />
+        <div class="bpmpresets" id="bpmPresets"></div>
+      </div>
+    </div>
     <div class="pop">
       <button class="tb" id="keyBtn" aria-haspopup="true">Key <b id="keyBtnTxt">Auto</b> ▾</button>
       <div class="popbox" id="keyPop" hidden>
@@ -284,7 +311,6 @@
       <button class="tb" id="setBtn" aria-haspopup="true">Settings ▾</button>
       <div class="popbox" id="setPop" hidden>
         <div class="adv">
-          <div class="sl" data-k="bpm"><label>BPM <span></span></label><input type="range" min="90" max="160" step="1" /></div>
           <div class="sl" data-k="temperature"><label>Variation <span></span></label><input type="range" min="0.3" max="2.5" step="0.05" /></div>
           <div class="sl"><label>Volume <span id="volV">80%</span></label><input id="vol" type="range" min="0" max="1" step="0.01" value="0.8" /></div>
           <span>Grid <button class="link" id="nudgeL">‹ 1 beat</button> · <button class="link" id="nudgeR">1 beat ›</button></span>
@@ -714,7 +740,7 @@ function findBassReturn() {
     let m = 0; for (let i = i0; i < i1; i++) m += H[i];
     m /= i1 - i0;
     const ref = n ? Math.min(h.base, sum / n) : h.base;
-    if (m > 2 * ref) return h.t0 + s;                              // stream time of the first "bass is back" beat
+    if (m > 1.4 * ref) return h.t0 + s;                            // first beat where the low end jumps ≥40% (bass back; kick alone dominates this band)
     sum += m; n++;
   }
 }
@@ -1133,14 +1159,31 @@ function selectLayer(i) {
   $("#layerEdit").value = next.layers[i]?.text ?? "";
   editTag();
 }
+/* Dice: re-roll one channel. Lyria has a single global seed, so "per-fader seed" = a new prompt variant:
+   library prompts swap to another prompt of the same category, your own prompts get a random flavour. */
+const FLAVORS = ["darker", "hypnotic", "driving", "distorted", "detuned", "filtered", "dubby", "metallic", "lo-fi", "wide and spacious", "acid", "minimal", "euphoric", "gritty"];
+function reroll(i) {
+  const l = next.layers[i]; if (!l) return;
+  const c = catOf(l.text);
+  if (c !== "custom") {
+    const pool = Object.values(LIB[c]).filter(t => !next.layers.some(x => x.text === t));
+    if (pool.length) l.text = pick(pool);
+  } else {
+    const base = l.text.replace(new RegExp(`, (${FLAVORS.join("|")})$`), "");
+    l.text = `${base}, ${pick(FLAVORS.filter(f => !l.text.endsWith(", " + f)))}`;
+  }
+  selLayer = i; renderLayers(); refresh();
+  const d = $$(".layer .dice")[i]; if (d) { d.classList.remove("roll"); void d.offsetWidth; d.classList.add("roll"); }
+}
 function renderLayers() {
   $("#layers").innerHTML = "";
   selLayer = Math.min(selLayer, next.layers.length - 1);
   next.layers.forEach((l, i) => {
     const st = document.createElement("div"); st.className = "layer" + (i === selLayer ? " sel" : "");
-    st.innerHTML = `<i class="cbar"></i><span class="ctag">${String(i + 1).padStart(2, "0")} · ${catOf(l.text)}</span><span class="w"></span><input class="vf" type="range" min="0" max="2" step="0.05" /><button class="name"></button><button class="x" title="Remove channel">×</button>`;
+    st.innerHTML = `<i class="cbar"></i><span class="ctag">${String(i + 1).padStart(2, "0")} · ${catOf(l.text)}</span><span class="w"></span><input class="vf" type="range" min="0" max="2" step="0.05" /><button class="name"></button><div class="acts"><button class="dice" title="Re-roll this prompt">⚄</button><button class="x" title="Remove channel">×</button></div>`;
     st.style.setProperty("--c", `var(--c-${catOf(l.text)})`); st.style.setProperty("--cc", `var(--c-${catOf(l.text)})`);
-    const [, , , rng, name, x] = st.children;
+    const [, , , rng, name, acts] = st.children, [dice, x] = acts.children;
+    dice.onclick = () => { reroll(i); };
     rng.value = l.weight; name.textContent = shortName(l.text); name.title = l.text;
     rng.oninput = () => { l.weight = +rng.value; refresh(); };
     name.onclick = () => { selectLayer(i); $("#layerEdit").focus(); };
@@ -1255,7 +1298,11 @@ function refresh() {
   drawPiano(next.scale);
   $$(".vf").forEach(r => r.style.setProperty("--v", ((r.value - r.min) / (r.max - r.min) * 100) + "%"));
   const kn = SCALES.find(x => x[0] === playingKey)?.[1];
-  $("#hdrInfo").innerHTML = `<b>${live?.bpm ?? next.bpm}</b> BPM`;
+  const pb = live?.bpm ?? next.bpm, staged = !!live && next.bpm !== live.bpm;
+  $("#hdrInfo").innerHTML = `<b>${pb}${staged ? " → " + next.bpm : ""}</b> BPM ▾`;
+  $("#hdrInfo").classList.toggle("staged", staged);
+  $("#bpmBig").textContent = next.bpm; $("#bpmBig").classList.toggle("staged", staged); $("#bpmRange").value = next.bpm;
+  $$("#bpmPresets button").forEach(b => b.classList.toggle("on", +b.dataset.v === next.bpm));
   const nk = SCALES.find(x => x[0] === next.scale)?.[1];
   $("#keyBtnTxt").textContent = (playingKey === "SCALE_UNSPECIFIED" ? "Auto" : kn) + (live && next.scale !== live.scale ? ` → ${next.scale === "SCALE_UNSPECIFIED" ? "Auto" : nk}` : "");
   $$(".scene").forEach(c => c.classList.toggle("on", JSON.stringify(SCENES[c.dataset.s].l.map(([g, k, w]) => LIB[g][k])) === JSON.stringify(next.layers.map(l => l.text))));
@@ -1368,10 +1415,17 @@ $("#recBtn").onclick = () => {
 /* ---------- keys ---------- */
 /* ---------- popovers + rail tabs ---------- */
 function popToggle(id, show) {
-  for (const p of ["#keyPop", "#setPop"]) $(p).hidden = p === id ? !(show ?? $(p).hidden) : true;
+  for (const p of ["#keyPop", "#setPop", "#bpmPop"]) $(p).hidden = p === id ? !(show ?? $(p).hidden) : true;
   if (id === "#keyPop" && !$("#keyPop").hidden) drawPiano(next.scale);
 }
 $("#keyBtn").onclick = e => { e.stopPropagation(); popToggle("#keyPop"); };
+$("#hdrInfo").onclick = e => { e.stopPropagation(); popToggle("#bpmPop"); };
+// tempo: stepper, slider, presets (Lyria range is 60–200; 90–160 covers house → hard techno)
+const setBpm = v => { next.bpm = Math.max(90, Math.min(160, Math.round(v))); refresh(); };
+$$(".bpmstep").forEach(b => b.onclick = () => setBpm(next.bpm + +b.dataset.d));
+$("#bpmRange").oninput = e => setBpm(+e.target.value);
+$("#bpmPresets").innerHTML = [120, 124, 126, 128, 130, 132, 135, 140].map(v => `<button data-v="${v}">${v}</button>`).join("");
+$$("#bpmPresets button").forEach(b => b.onclick = () => setBpm(+b.dataset.v));
 $("#setBtn").onclick = e => { e.stopPropagation(); popToggle("#setPop"); };
 $$(".popbox").forEach(p => p.onclick = e => e.stopPropagation());
 document.addEventListener("click", () => popToggle(null));
