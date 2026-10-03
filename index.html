@@ -565,6 +565,7 @@ function saveKey() { try { localStorage.setItem("lyria_apiver", $("#apiVersion")
 
 /* ---------- connect ---------- */
 $("#connectBtn").onclick = async () => {
+  unlockAudio();                                                  // first tap: claim the iPhone audio session early
   if (session) { try { session.close(); } catch {} return offline(); }
   saveKey(); status("connecting…", "busy");
   let apiKey;
@@ -806,11 +807,32 @@ function holdTick() { holdStep(); }
 
 $("#vol").oninput = e => { $("#volV").textContent = Math.round(e.target.value * 100) + "%"; if (gain) gain.gain.value = +e.target.value; };
 
+/* iPhone: Web Audio follows the ring/silent switch and gets suspended on interruptions.
+   On the first tap, move the page into the "playback" audio session (ignores the silent switch):
+   navigator.audioSession where supported, plus a looping silent <audio> element for older iOS. */
+let silentEl = null;
+function unlockAudio() {
+  try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch {}
+  if (!silentEl) {
+    const n = 4000, b = new ArrayBuffer(44 + n * 2), v = new DataView(b), w = (o, t) => [...t].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+    w(0, "RIFF"); v.setUint32(4, 36 + n * 2, true); w(8, "WAVEfmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, 8000, true); v.setUint32(28, 16000, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, "data"); v.setUint32(40, n * 2, true);
+    silentEl = new Audio(URL.createObjectURL(new Blob([b], { type: "audio/wav" })));
+    silentEl.loop = true; silentEl.setAttribute("playsinline", ""); silentEl.volume = 0.01;
+  }
+  silentEl.play().catch(() => {});
+  if (ctx && ctx.state !== "running") ctx.resume().catch(() => {});
+}
+// iOS suspends/interrupts the context (lock screen, calls, app switch): resume on the next touch or when the page is back
+document.addEventListener("pointerdown", () => { if (playing) unlockAudio(); }, true);
+document.addEventListener("visibilitychange", () => { if (!document.hidden && playing && ctx) ctx.resume().catch(() => {}); });
+
 $("#playBtn").onclick = togglePlay;
 async function togglePlay() {
   if (!session) return;
+  unlockAudio();                                                  // must run inside the tap, before any await
   if (!ctx) {
-    ctx = new AudioContext({ sampleRate: SR });
+    ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SR });
     // hp (build thinning/riser) → sub low-shelf → dry + saturated wet → glue comp → duck (pump/gate) → boost → limiter → volume
     hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 10; hp.Q.value = 4;
     sub = ctx.createBiquadFilter(); sub.type = "lowshelf"; sub.frequency.value = 90; sub.gain.value = 0;
