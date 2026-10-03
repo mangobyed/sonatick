@@ -1044,7 +1044,7 @@ async function send(first) {
                 muteDrums: !next.drums, muteBass: !next.bass };
   if (next.scale !== "SCALE_UNSPECIFIED") cfg.scale = next.scale;
   try {
-    const wp = next.layers.filter(l => l.text.trim() && l.weight > 0).map(l => ({ text: l.text.trim(), weight: l.weight }));
+    const wp = next.layers.filter(l => l.text.trim() && l.weight > 0).map(l => ({ text: promptText({ ...l, text: l.text.trim() }), weight: l.weight }));
     if (!wp.length) wp.push({ text: "techno", weight: 1 });
     const total = wp.reduce((a, p) => a + p.weight, 0);
     const mw = +(total * m.share / (1 - m.share)).toFixed(2);       // moment prompt gets `share` of the mix
@@ -1166,7 +1166,7 @@ const catOf = t => Object.keys(LIB).find(c => Object.values(LIB[c]).includes(t))
 // "▲ FADER 02 · BASS": which fader the red prompt bar is editing
 function editTag() {
   const l = next.layers[selLayer];
-  $("#editTag").textContent = l ? `▲ FADER ${String(selLayer + 1).padStart(2, "0")} · ${catOf(l.text)}` : "▲ NO FADER";
+  $("#editTag").textContent = l ? `▲ FADER ${String(selLayer + 1).padStart(2, "0")} · ${catOf(l.text)}${l.seed ? " · SEED " + l.seed : ""}` : "▲ NO FADER";
 }
 // select a channel for the red prompt bar without re-rendering (so a fader drag isn't interrupted)
 function selectLayer(i) {
@@ -1176,19 +1176,12 @@ function selectLayer(i) {
   $("#layerEdit").value = next.layers[i]?.text ?? "";
   editTag();
 }
-/* Dice: re-roll one channel. Lyria has a single global seed, so "per-fader seed" = a new prompt variant:
-   library prompts swap to another prompt of the same category, your own prompts get a random flavour. */
-const FLAVORS = ["darker", "hypnotic", "driving", "distorted", "detuned", "filtered", "dubby", "metallic", "lo-fi", "wide and spacious", "acid", "minimal", "euphoric", "gritty"];
-function reroll(i) {
+/* Dice = a seed for this one prompt. Lyria has a single global seed, so each fader's seed is sent as a
+   hidden variation of its own prompt text ("…, variation 4821"): same prompt, new take, other faders untouched. */
+const promptText = l => l.seed ? `${l.text}, variation ${l.seed}` : l.text;
+function reseed(i) {
   const l = next.layers[i]; if (!l) return;
-  const c = catOf(l.text);
-  if (c !== "custom") {
-    const pool = Object.values(LIB[c]).filter(t => !next.layers.some(x => x.text === t));
-    if (pool.length) l.text = pick(pool);
-  } else {
-    const base = l.text.replace(new RegExp(`, (${FLAVORS.join("|")})$`), "");
-    l.text = `${base}, ${pick(FLAVORS.filter(f => !l.text.endsWith(", " + f)))}`;
-  }
+  l.seed = 1000 + Math.floor(Math.random() * 9000);
   selLayer = i; renderLayers(); refresh();
   const d = $$(".layer .dice")[i]; if (d) { d.classList.remove("roll"); void d.offsetWidth; d.classList.add("roll"); }
 }
@@ -1197,10 +1190,10 @@ function renderLayers() {
   selLayer = Math.min(selLayer, next.layers.length - 1);
   next.layers.forEach((l, i) => {
     const st = document.createElement("div"); st.className = "layer" + (i === selLayer ? " sel" : "");
-    st.innerHTML = `<i class="cbar"></i><span class="ctag">${String(i + 1).padStart(2, "0")} · ${catOf(l.text)}</span><span class="w"></span><input class="vf" type="range" min="0" max="2" step="0.05" /><button class="name"></button><div class="acts"><button class="dice" title="Re-roll this prompt">⚄</button><button class="x" title="Remove channel">×</button></div>`;
+    st.innerHTML = `<i class="cbar"></i><span class="ctag">${String(i + 1).padStart(2, "0")} · ${catOf(l.text)}${l.seed ? ` · #${l.seed}` : ""}</span><span class="w"></span><input class="vf" type="range" min="0" max="2" step="0.05" /><button class="name"></button><div class="acts"><button class="dice" title="New seed for this prompt (same prompt, new take)">⚄</button><button class="x" title="Remove channel">×</button></div>`;
     st.style.setProperty("--c", `var(--c-${catOf(l.text)})`); st.style.setProperty("--cc", `var(--c-${catOf(l.text)})`);
     const [, , , rng, name, acts] = st.children, [dice, x] = acts.children;
-    dice.onclick = () => { reroll(i); };
+    dice.onclick = () => { reseed(i); };
     rng.value = l.weight; name.textContent = shortName(l.text); name.title = l.text;
     rng.oninput = () => { l.weight = +rng.value; refresh(); };
     name.onclick = () => { selectLayer(i); $("#layerEdit").focus(); };
@@ -1308,7 +1301,7 @@ function refresh() {
     row.querySelector(".w").textContent = l.weight.toFixed(2);
     row.querySelector("input[type=range]").value = l.weight;
     row.classList.toggle("zero", l.weight === 0);
-    row.classList.toggle("changed", !!live && (!was || was.weight !== l.weight));
+    row.classList.toggle("changed", !!live && (!was || was.weight !== l.weight || was.seed !== l.seed));
   });
   const playingKey = live?.scale ?? next.scale;
   $$("#keys button").forEach(b => { b.classList.toggle("on", b.dataset.v === playingKey); b.classList.toggle("next", !!live && b.dataset.v === next.scale && next.scale !== live.scale); });
