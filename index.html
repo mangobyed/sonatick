@@ -1,0 +1,1402 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sonatick</title>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=JetBrains+Mono:wght@200;300;400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  /* ============================================================
+     SONATICK — control-room schematic
+     pure black, hairlines, square corners. two typefaces:
+     Archivo Expanded (names, shouting) + JetBrains Mono (numbers, labels).
+     states: inverted = playing / on · dashed + blink = staged for the next chunk.
+     ============================================================ */
+  :root {
+    --bg: #000; --ink: #fff; --p1: #070707; --p2: #0e0e0e; --p3: #161616;
+    --line: #1e1e1e; --line2: #333; --dim: #8c8c8c; --mute: #4f4f4f;
+    --text: #fff; --panel: #070707; --panel2: #0e0e0e; --panel3: #161616;
+    --accent: #fff; --amber: #9a9a9a; --green: #fff;
+    --c-genres: #fff; --c-drums: #d6d6d6; --c-bass: #adadad; --c-synths: #8a8a8a; --c-pads: #6a6a6a; --c-fx: #4f4f4f; --c-custom: #3a3a3a;
+    --red: #ff2a1a;   /* the one accent: red = a prompt */
+    --gap: 8px;
+    --display: "Archivo", "Inter", system-ui, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  ::selection { background: #fff; color: #000; }
+  ::-webkit-scrollbar { width: 6px; height: 6px; } ::-webkit-scrollbar-thumb { background: #2a2a2a; } ::-webkit-scrollbar-track { background: transparent; }
+  html, body { margin: 0; color: var(--ink); font: 400 14px/1.4 var(--display); }
+  body { background: #000 radial-gradient(#141414 1px, transparent 1.2px) 0 0 / 22px 22px; }
+  button, input, select { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; border-radius: 0; }
+  button:focus-visible, input:focus-visible, select:focus-visible { outline: 1px solid #fff; outline-offset: 3px; }
+  .mono { font-family: var(--mono); }
+  .lbl { font: 600 9px var(--mono); letter-spacing: .24em; text-transform: uppercase; color: var(--mute); }
+  .hint { font: 400 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--mute); }
+  @keyframes blink { 50% { border-color: transparent; } }
+  @keyframes blinkbg { 50% { opacity: .35; } }
+
+  /* ---------- frame ---------- */
+  .app { display: grid; grid-template-rows: auto auto auto minmax(0, 1fr); gap: var(--gap); height: 100vh; min-height: 760px; padding: 0 var(--gap) var(--gap); }
+  @media (max-width: 980px) { .app { height: auto; min-height: 0; } }
+  .panel { position: relative; background: var(--p1); border: 1px solid var(--line); padding: 18px 18px 14px; min-width: 0; }
+  .panel[data-label]::before { content: attr(data-label); position: absolute; top: -1px; left: -1px; z-index: 1; background: #fff; color: #000;
+                               font: 700 9px var(--mono); letter-spacing: .22em; padding: 3px 8px 3px 7px; }
+
+  /* ---------- top bar ---------- */
+  .topbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 2px 2px; }
+  .topbar h1 { margin: 0 14px 0 0; font: 900 19px/1 var(--display); font-stretch: 125%; letter-spacing: .02em; text-transform: uppercase; }
+  .topbar h1 span { color: var(--mute); font-weight: 300; margin: 0 4px; }
+  .topbar h1 small { font: 500 9px var(--mono); letter-spacing: .2em; color: var(--mute); vertical-align: middle; }
+  .status { display: flex; align-items: center; gap: 8px; font: 500 10px var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--dim); margin-right: 8px; }
+  .dot { width: 6px; height: 6px; background: var(--mute); display: inline-block; }
+  .dot.on { background: #fff; animation: blinkbg 1.6s steps(1) infinite; } .dot.busy { background: #888; } .dot.err { background: #fff; outline: 1px solid #fff; outline-offset: 2px; }
+  .tb { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border: 1px solid var(--line2); background: #000; font: 500 10px var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--dim); }
+  .tb b { color: #fff; font-weight: 600; letter-spacing: .08em; }
+  .tb:hover { border-color: #fff; color: #fff; }
+  .tb.rec.on { background: #fff; color: #000; border-color: #fff; animation: blinkbg 1s steps(1) infinite; } .tb.rec.on b { color: #000; }
+  .tb:disabled { opacity: .3; cursor: default; }
+  .spacer { flex: 1; }
+  .key { display: flex; gap: 8px; align-items: center; }
+  .key input { width: 230px; max-width: 46vw; height: 32px; border: 1px solid var(--line2); padding: 0 12px; font: 400 11px var(--mono); cursor: text; background: #000; }
+  .key input:focus { outline: none; border-color: #fff; }
+  .pill { height: 32px; padding: 0 14px; border: 1px solid var(--line2); font: 600 10px var(--mono); letter-spacing: .18em; text-transform: uppercase; }
+  .pill:hover { border-color: #fff; }
+  .pill.primary { background: #fff; color: #000; border-color: #fff; }
+  .link { font: 500 11px var(--mono); color: var(--dim); } .link:hover { color: #fff; }
+
+  /* popovers */
+  .pop { position: relative; }
+  .popbox { position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; width: 440px; max-width: 92vw; background: #000; border: 1px solid #fff; padding: 18px; box-shadow: 12px 12px 0 rgba(255,255,255,.06); }
+  .popbox[hidden] { display: none; }
+  .pophead { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px; }
+  .keys { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+  .keys button { height: 36px; border: 1px solid var(--line2); font: 500 11px var(--mono); letter-spacing: .06em; color: var(--dim); }
+  .keys button:hover { color: #fff; border-color: #fff; }
+  .keys button.on { color: #000; background: #fff; border-color: #fff; font-weight: 700; }
+  .keys button.next { color: #fff; border: 1px dashed #fff; animation: blink 1s steps(1) infinite; }
+  .keys button.auto { grid-column: span 4; letter-spacing: .3em; }
+  .piano { position: relative; height: 74px; margin-top: 14px; }
+  .piano i { position: absolute; top: 0; }
+  .piano i.w { height: 74px; background: #1c1c1c; border: 1px solid #000; }
+  .piano i.b { height: 44px; background: #0b0b0b; border: 1px solid #000; z-index: 1; }
+  .piano i.in { background: #e6e6e6; } .piano i.b.in { background: #8c8c8c; }
+  .piano i.root { background: #fff !important; box-shadow: inset 0 -14px 0 #000; }
+  .knotes { font: 600 11px var(--mono); letter-spacing: .2em; color: #fff; }
+  .popnote { font: 400 10px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--mute); margin-top: 14px; line-height: 1.6; }
+  .adv { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 22px; font: 500 10px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--dim); }
+  .adv .sl label { display: flex; justify-content: space-between; margin-bottom: 10px; } .adv .sl label span { color: #fff; }
+  .adv .sl.changed label span { text-decoration: underline dashed; }
+  .adv input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 1px; background: var(--line2); }
+  .adv input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 8px; height: 18px; background: #fff; }
+  select { background: #000; border: 1px solid var(--line2); padding: 5px 8px; font: 500 10px var(--mono); letter-spacing: .1em; text-transform: uppercase; } select option { background: #000; }
+  #log { font: 400 10px var(--mono); max-height: 110px; overflow-y: auto; margin-top: 14px; color: var(--dim); border-top: 1px solid var(--line); padding-top: 10px; }
+  #log .e { color: #fff; font-weight: 700; } #log .w { color: #ccc; }
+
+  /* ---------- 01 deck ---------- */
+  .deck { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; grid-template-rows: auto auto; column-gap: 22px; align-items: center; padding-top: 24px; }
+  .play { width: 64px; height: 64px; border: 1px solid #fff; font-size: 18px; }
+  .play:hover { background: #111; }
+  .play:disabled { opacity: .2; cursor: default; }
+  .play.on { background: #fff; color: #000; }
+  .nextmsg { font: 800 26px/1.05 var(--display); font-stretch: 125%; text-transform: uppercase; letter-spacing: -.005em; min-width: 0; }
+  .nextmsg small { display: block; font: 500 10px var(--mono); letter-spacing: .18em; text-transform: uppercase; color: var(--dim); margin-top: 8px; }
+  .nextmsg span { color: #fff !important; }
+  .clock { font: 300 34px/1 var(--mono); letter-spacing: -.02em; color: #fff; text-transform: uppercase; }
+  .dropbtn { width: 230px; height: 72px; background: #fff; color: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; overflow: hidden; }
+  .dropbtn b { font: 900 30px/1 var(--display); font-stretch: 125%; letter-spacing: .22em; margin-right: -.22em; }
+  .dropbtn small { font: 600 8.5px var(--mono); letter-spacing: .26em; color: #000; opacity: .55; margin-top: 7px; }
+  .dropbtn:hover { background: repeating-linear-gradient(135deg, #fff 0 7px, #e4e4e4 7px 14px); }
+  .dropbtn:active, .dropbtn.hit { background: #000; color: #fff; outline: 1px solid #fff; } .dropbtn.hit small { color: #fff; }
+  .dropbtn:disabled { opacity: .2; cursor: default; }
+  canvas#strip { grid-column: 1 / -1; width: 100%; height: 84px; display: block; margin-top: 12px; border-top: 1px solid var(--line); padding-top: 4px; }
+
+  /* ---------- 02 arrange ---------- */
+  .arrange { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 20px; align-items: stretch; padding-top: 24px; }
+  .moments { display: grid; grid-template-columns: repeat(6, 1fr); gap: 0; border: 1px solid var(--line2); }
+  .mom { position: relative; text-align: left; padding: 30px 14px 12px; border: 0; border-right: 1px solid var(--line2); outline: 1px solid transparent; outline-offset: -1px; }
+  .mom:last-child { border-right: 0; }
+  .mom::before { display: none; }
+  .mom b { display: block; font: 800 15px/1 var(--display); font-stretch: 125%; text-transform: uppercase; letter-spacing: .01em; }
+  .mom small { display: block; font: 500 9px var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--dim); margin-top: 8px; }
+  .mom .n { position: absolute; top: 10px; left: 14px; font: 600 9px var(--mono); letter-spacing: .1em; color: var(--mute); }
+  .mom .n::before { content: "0"; }
+  .mom:hover { background: #111; }
+  .mom.now { background: #fff; color: #000; } .mom.now small, .mom.now .n { color: #000; opacity: .6; }
+  .mom.next, .mom.asking { outline: 1px dashed #fff; animation: blink 1s steps(1) infinite; }
+  .mom.next b::after, .mom.asking b::after { content: " ▸"; }
+  .when { display: grid; grid-template-columns: auto auto; gap: 9px 16px; align-content: center; font: 500 10px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--dim); }
+  .when .seg { grid-column: 1 / -1; }
+  .seg { display: inline-flex; border: 1px solid var(--line2); }
+  .seg button { height: 28px; padding: 0 11px; font: 500 10px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--dim); border-right: 1px solid var(--line2); }
+  .seg button:last-child { border-right: 0; } .seg button:hover { color: #fff; }
+  .seg button.on { background: #fff; color: #000; font-weight: 700; }
+  .when label { display: flex; align-items: center; gap: 7px; cursor: pointer; white-space: nowrap; }
+  .when input[type=checkbox] { -webkit-appearance: none; appearance: none; width: 11px; height: 11px; border: 1px solid #fff; cursor: pointer; }
+  .when input[type=checkbox]:checked { background: #fff; box-shadow: inset 0 0 0 2px #000; }
+  #dropNow { justify-self: start; height: 28px; }
+  .ask { grid-column: 1 / -1; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; padding: 10px 12px; border: 1px dashed #fff; font: 500 10px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--dim); }
+  .ask[hidden] { display: none; }
+  .ask b { font: 800 13px var(--display); font-stretch: 125%; color: #fff; letter-spacing: .02em; }
+  .ask [data-b] { min-width: 40px; height: 30px; border: 1px solid var(--line2); font: 600 13px var(--mono); color: var(--dim); }
+  .ask [data-b]:hover { color: #fff; border-color: #fff; } .ask [data-b].on { background: #fff; color: #000; border-color: #fff; }
+  .bst button { height: 26px; padding: 0 10px; border: 1px solid var(--line2); font: 500 10px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--dim); margin-left: 3px; }
+  .bst button:hover { color: #fff; } .bst button.on { color: #000; background: #fff; border-color: #fff; }
+  @media (max-width: 1100px) { .arrange { grid-template-columns: 1fr; } .when { grid-template-columns: repeat(4, auto); justify-content: start; } .when .seg { grid-column: auto; } }
+  @media (max-width: 700px) { .moments { grid-template-columns: repeat(3, 1fr); } .deck { grid-template-columns: auto 1fr; row-gap: 12px; } .clock { display: none; } .dropbtn { grid-column: 1 / -1; width: 100%; } }
+
+  /* ---------- 03 mix ---------- */
+  .main { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: var(--gap); min-height: 0; }
+  @media (max-width: 1200px) { .main { grid-template-columns: minmax(0, 1fr) 340px; } }
+  @media (max-width: 980px) { .main { grid-template-columns: 1fr; } }
+  .mixpanel { display: flex; flex-direction: column; min-height: 0; padding-top: 24px; }
+  .ph { display: flex; align-items: baseline; gap: 12px; margin: 0 0 12px; }
+  .mixer { display: flex; align-items: stretch; gap: 0; overflow-x: auto; flex: 1; min-height: 300px; border: 1px solid var(--line2); }
+  #layers { display: flex; flex: 1; }
+  .layer { flex: 1 1 0; min-width: 104px; }
+  .vstrip { width: 110px; flex: 0 0 auto; }
+  .layer, .vstrip { position: relative; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 14px 0 10px; border-right: 1px solid var(--line2); outline: 1px solid transparent; outline-offset: -1px; }
+  .layer .cbar { position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--red); }
+  .layer .ctag { font: 600 8.5px var(--mono); letter-spacing: .26em; text-transform: uppercase; color: var(--mute); }
+  .layer .w, .vstrip label span { font: 300 30px/1 var(--mono); letter-spacing: -.04em; color: #fff; }
+  .layer.sel { background: #0d0d0d; }
+  .layer.sel .name { color: var(--red); }
+  .layer.sel { box-shadow: inset 0 -3px 0 var(--red); }
+  .layer.changed, .vstrip.changed { outline: 1px dashed #fff; animation: blink 1s steps(1) infinite; }
+  /* faders: LED ladder. lit white segments up to the level, dim segments above */
+  .vf { -webkit-appearance: none; appearance: none; writing-mode: vertical-lr; direction: rtl; width: 64px; flex: 1 1 auto; height: auto; min-height: 130px; --v: 50%; --c: #fff; cursor: ns-resize;
+        background:
+          repeating-linear-gradient(to top, var(--c) 0 3px, transparent 3px 7px) center bottom / 26px var(--v) no-repeat,
+          repeating-linear-gradient(to top, #1d1d1d 0 3px, transparent 3px 7px) center / 26px 100% no-repeat; }
+  .layer .vf { --c: var(--red); }
+  .layer .vf::-webkit-slider-thumb { background: var(--red); box-shadow: 0 0 0 3px #000, 0 0 0 4px var(--red); }
+  .layer .vf::-moz-range-thumb { background: var(--red); }
+  .changed .vf { --c: #7a7a7a !important; }
+  .vf::-webkit-slider-thumb { -webkit-appearance: none; width: 56px; height: 9px; background: #fff; box-shadow: 0 0 0 3px #000, 0 0 0 4px #fff; }
+  .vf::-moz-range-thumb { width: 56px; height: 9px; border: 0; border-radius: 0; background: #fff; box-shadow: 0 0 0 3px #000, 0 0 0 4px #fff; }
+  .layer .name { font: 500 9.5px/1.45 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--dim); text-align: center; height: 28px; overflow: hidden; width: 100%; padding: 0 8px; }
+  .layer .name:hover { color: #fff; }
+  .layer.zero .name { text-decoration: line-through; }
+  /* delete = PlayStation-style cross button: ring + crisp X, red on hover */
+  .layer .x { position: relative; width: 42px; height: 42px; flex: 0 0 auto; border-radius: 50%; border: 2px solid #3a3a3a; font-size: 0; color: transparent;
+              transition: background .08s, border-color .08s, transform .08s; }
+  .layer .x::before, .layer .x::after { content: ""; position: absolute; left: 50%; top: 50%; width: 20px; height: 2.5px; border-radius: 2px; background: #9a9a9a; }
+  .layer .x::before { transform: translate(-50%, -50%) rotate(45deg); }
+  .layer .x::after  { transform: translate(-50%, -50%) rotate(-45deg); }
+  .layer .x:hover { border-color: var(--red); background: var(--red); }
+  .layer .x:hover::before, .layer .x:hover::after { background: #000; }
+  .layer .x:active { transform: scale(.92); }
+  .vstrip label { display: flex; flex-direction: column; align-items: center; gap: 10px; font: 600 9px var(--mono); letter-spacing: .24em; text-transform: uppercase; color: var(--dim); }
+  .vstrip label span { order: -1; }
+  .addstrip { width: 64px; flex: 0 0 auto; border-right: 1px solid var(--line2); color: var(--mute); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; font: 600 9px var(--mono); letter-spacing: .2em; text-transform: uppercase;
+              background: repeating-linear-gradient(135deg, transparent 0 8px, #0c0c0c 8px 9px); }
+  .addstrip b { font: 200 28px/1 var(--mono); } .addstrip:hover { color: #fff; background: #0c0c0c; }
+  .master { display: flex; flex: 0 0 auto; background: #0a0a0a; }
+  .master .col { display: flex; flex-direction: column; }
+  .master .col .faders { display: flex; flex: 1; }
+  .master .vstrip:last-child { border-right: 0; }
+  .toggles { display: flex; border-top: 1px solid var(--line2); }
+  .tog { flex: 1; height: 42px; font: 600 10px var(--mono); letter-spacing: .22em; text-transform: uppercase; border-right: 1px solid var(--line2); }
+  .tog:last-child { border-right: 0; }
+  .tog:not(.off) { background: #fff; color: #000; }
+  .tog.off { color: var(--mute); text-decoration: line-through; }
+  .tog.changed { outline: 1px dashed #fff; outline-offset: -4px; animation: blink 1s steps(1) infinite; }
+  .tog.changed:not(.off) { background: #8a8a8a; }
+  .editor { display: flex; align-items: center; gap: 16px; margin-top: 12px; padding: 0 16px; height: 46px; background: var(--red); }
+  #layerEdit { flex: 1; height: 46px; padding: 0 2px; font: 500 15px var(--display); color: #000; caret-color: #000; cursor: text; }
+  #layerEdit::placeholder { color: rgba(0,0,0,.5); }
+  #layerEdit:focus { outline: none; }
+  /* the tag ties the red prompt bar to its fader above */
+  .etag { align-self: stretch; display: flex; align-items: center; margin-left: -16px; padding: 0 16px; background: #000; color: var(--red);
+          font: 700 10px var(--mono); letter-spacing: .22em; text-transform: uppercase; white-space: nowrap; box-shadow: inset 0 0 0 1px var(--red); }
+  .editor:focus-within { box-shadow: inset 0 0 0 2px #000, 0 0 0 1px var(--red); }
+
+  /* ---------- 04 rail: library / modulate ---------- */
+  .rail { display: flex; flex-direction: column; min-height: 0; padding: 0; }
+  .railtabs { display: flex; border-bottom: 1px solid var(--line2); margin-top: 22px; }
+  .railtabs button { flex: 1; height: 36px; font: 600 10px var(--mono); letter-spacing: .26em; text-transform: uppercase; color: var(--mute); border-right: 1px solid var(--line2); }
+  .railtabs button:last-child { border-right: 0; }
+  .railtabs button:hover { color: #fff; }
+  .railtabs button.on { color: #000; background: #fff; }
+  .railbody { flex: 1; overflow-y: auto; padding: 14px 16px; min-height: 0; }
+  .railbody[hidden] { display: none; }
+  .libtop { position: sticky; top: -14px; z-index: 2; display: flex; gap: 6px; margin: -14px -16px 14px; padding: 12px 16px; background: var(--p1); border-bottom: 1px solid var(--line); }
+  #libSearch { flex: 1; min-width: 0; height: 32px; border: 1px solid var(--line2); padding: 0 10px; font: 400 11px var(--mono); letter-spacing: .04em; cursor: text; background: #000; }
+  #libSearch::placeholder { color: var(--mute); text-transform: uppercase; letter-spacing: .12em; }
+  #libSearch:focus { outline: none; border-color: #fff; }
+  #sceneSel { max-width: 140px; height: 32px; color: var(--dim); }
+  .lgroup { margin-bottom: 16px; } .lgroup .lbl { margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+  .lgroup .lbl i { width: 14px; height: 2px; background: var(--c); }
+  .libempty { font: 400 11px var(--mono); color: var(--dim); padding: 6px 0; line-height: 1.6; } .libempty b { color: #fff; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .chip { display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 9px; border: 1px solid var(--line2); font: 500 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: #ddd; }
+  .chip i { display: none; }
+  .chip:hover { border-color: var(--red); color: #fff; }
+  .chip.on { background: var(--red); color: #000; border-color: var(--red); font-weight: 700; }
+  .chip.on::after { content: "●"; font-size: 7px; }
+  .xypads { display: grid; grid-template-columns: 1fr; gap: 20px; }
+  .xy { position: relative; height: 210px; border: 1px solid var(--line2); touch-action: none; cursor: crosshair; background:
+        radial-gradient(#2a2a2a 1px, transparent 1.3px) 0 0 / 16px 16px, #050505; }
+  .xy .dot, .xy .ghost { position: absolute; width: 14px; height: 14px; margin: -7px 0 0 -7px; pointer-events: none; }
+  .xy .dot { background: #fff; box-shadow: 0 0 0 4px #000, 0 0 0 5px #fff; }
+  .xy .dot.changed { background: transparent; outline: 1px dashed #fff; outline-offset: 2px; box-shadow: none; animation: blink 1s steps(1) infinite; }
+  .xy .ghost { border: 1px solid var(--dim); }
+  .xy .cross { position: absolute; background: #2a2a2a; pointer-events: none; }
+  .axes { display: flex; gap: 14px; font: 500 10px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--dim); margin-top: 8px; }
+  .axes select { max-width: 150px; }
+  /* ---------- rotate screen: portrait phones can't use the app ---------- */
+  #rotate { display: none; }
+  @media (orientation: portrait) and (max-width: 820px) {
+    #rotate { position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; background: #000; text-align: center; padding: 24px; }
+    .app { display: none; }
+  }
+  #rotate .phone { width: 46px; height: 80px; border: 2px solid #fff; border-radius: 8px; position: relative; animation: turn 2.4s cubic-bezier(.7, 0, .3, 1) infinite; }
+  #rotate .phone::after { content: ""; position: absolute; left: 50%; bottom: 6px; width: 12px; height: 2px; margin-left: -6px; background: var(--red); }
+  @keyframes turn { 0%, 25% { transform: rotate(0); } 55%, 100% { transform: rotate(-90deg); } }
+  #rotate b { font: 900 22px/1.05 var(--display); font-stretch: 125%; text-transform: uppercase; }
+  #rotate small { font: 500 10px var(--mono); letter-spacing: .2em; text-transform: uppercase; color: var(--dim); }
+</style>
+</head>
+<body>
+<!-- phones in portrait: Sonatick needs landscape -->
+<div id="rotate" role="alert">
+  <div class="phone"></div>
+  <b>Rotate your phone</b>
+  <small>Sonatick only works in landscape</small>
+</div>
+<div class="app">
+  <!-- top bar: identity, state, set-and-forget controls -->
+  <header class="topbar">
+    <h1>Sonatick<span>//</span><small>Lyria RT</small></h1>
+    <span class="status"><i id="dot" class="dot"></i><span id="statusTxt">offline</span></span>
+    <span class="tb mono" id="hdrInfo"></span>
+    <div class="pop">
+      <button class="tb" id="keyBtn" aria-haspopup="true">Key <b id="keyBtnTxt">Auto</b> ▾</button>
+      <div class="popbox" id="keyPop" hidden>
+        <div class="pophead"><span class="lbl">Key · the scale every prompt follows</span><span class="knotes mono" id="knotes"></span></div>
+        <div class="keys" id="keys"></div>
+        <div class="piano" id="piano"></div>
+        <div class="popnote">A key change lands with the next chunk and restarts the groove.</div>
+      </div>
+    </div>
+    <button class="tb rec" id="recBtn" disabled>● <b>REC</b></button>
+    <div class="pop">
+      <button class="tb" id="setBtn" aria-haspopup="true">Settings ▾</button>
+      <div class="popbox" id="setPop" hidden>
+        <div class="adv">
+          <div class="sl" data-k="bpm"><label>BPM <span></span></label><input type="range" min="90" max="160" step="1" /></div>
+          <div class="sl" data-k="temperature"><label>Variation <span></span></label><input type="range" min="0.3" max="2.5" step="0.05" /></div>
+          <div class="sl"><label>Volume <span id="volV">80%</span></label><input id="vol" type="range" min="0" max="1" step="0.01" value="0.8" /></div>
+          <span>Grid <button class="link" id="nudgeL">‹ 1 beat</button> · <button class="link" id="nudgeR">1 beat ›</button></span>
+          <label>API <select id="apiVersion"><option>v1alpha</option><option>v1beta</option></select></label>
+        </div>
+        <div class="popnote">BPM changes restart the music. Keys: space play · 1–6 moments · D drop · enter send now.</div>
+        <div id="log" class="mono"></div>
+      </div>
+    </div>
+    <span class="spacer"></span>
+    <div class="key">
+      <button class="pill primary" id="connectBtn">Connect</button>
+    </div>
+  </header>
+
+  <!-- deck: transport, what's next, the drop -->
+  <section class="panel deck" data-label="01 DECK">
+    <button class="play" id="playBtn" disabled aria-label="Play / pause">▶</button>
+    <div class="nextmsg" id="nextMsg">Press connect<small>&nbsp;</small></div>
+    <div class="clock mono" id="clock"></div>
+    <button class="dropbtn" id="dropBtn" disabled title="Drop on the next beat (D)"><b>DROP</b><small>INSTANT · NEXT BEAT · D</small></button>
+    <canvas id="strip" width="2400" height="184"></canvas>
+  </section>
+
+  <!-- arrange: next moment + how it lands -->
+  <section class="panel arrange" data-label="02 ARRANGE">
+    <div class="moments" id="moments"></div>
+    <div class="when">
+      <span class="lbl" style="grid-column:1/-1">Next chunk lands in</span>
+      <span class="seg" id="quant"><button data-q="0">now</button><button data-q="4">4 bars</button><button data-q="8" class="on">8 bars</button><button data-q="16">16</button></span>
+      <label><input type="checkbox" id="autoBuild" checked /> build first</label>
+      <label><input type="checkbox" id="riser" checked /> riser</label>
+      <label><input type="checkbox" id="fatFx" checked /> fat fx</label>
+      <button class="pill" id="dropNow">Send now ⏎</button>
+    </div>
+    <div class="ask" id="buildAsk" hidden>
+      <b>Build for</b>
+      <span style="display:flex;gap:6px"><button data-b="2">2</button><button data-b="4">4</button><button data-b="8">8</button><button data-b="16">16</button><button data-b="32">32</button></span>
+      <span>bars, then drop</span>
+      <span class="bst"><button data-s="random">random</button><button data-s="roll">snare roll</button><button data-s="kick">kick roll</button><button data-s="rise">synth rise</button><button data-s="sweep">sweep</button><button data-s="stutter">stutter</button></span>
+      <button class="link" id="askCancel" style="margin-left:auto">cancel</button>
+    </div>
+  </section>
+
+  <!-- main: the mixer is the instrument; library feeds it from the side -->
+  <div class="main">
+    <section class="panel mixpanel" data-label="03 MIX">
+      <div class="ph"><span class="hint">each fader is a prompt · higher = more of it · click a name to edit</span></div>
+      <div class="mixer">
+        <div id="layers"></div>
+        <button class="addstrip" id="addLayer" title="Add an empty prompt channel"><b>+</b>add</button>
+        <div class="master">
+          <div class="col">
+            <div class="faders">
+              <div class="vstrip sl" data-k="density"><input class="vf" type="range" min="0" max="1" step="0.01" /><label>Energy <span></span></label></div>
+              <div class="vstrip sl" data-k="brightness"><input class="vf" type="range" min="0" max="1" step="0.01" /><label>Brightness <span></span></label></div>
+            </div>
+            <div class="toggles">
+              <button class="tog" data-t="drums">Drums</button>
+              <button class="tog" data-t="bass">Bass</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="editor">
+        <span class="etag" id="editTag">▲ FADER 01</span>
+        <input id="layerEdit" type="text" placeholder="Click a channel name to edit its prompt" />
+      </div>
+    </section>
+
+    <section class="panel rail" data-label="04 SOURCE">
+      <div class="railtabs"><button data-r="lib" class="on">Library</button><button data-r="mod">Modulate</button></div>
+      <div class="railbody" id="libPanel">
+        <div class="libtop">
+          <input id="libSearch" type="text" placeholder="Search · type + ⏎ adds" autocomplete="off" spellcheck="false" />
+          <select id="sceneSel" title="Load a whole mix"></select>
+        </div>
+        <div id="chips"></div>
+      </div>
+      <div class="railbody" id="modPanel" hidden>
+        <div id="libHintMod" class="hint" style="margin-bottom:14px">drag the dot · solid = next chunk · ring = playing now</div>
+        <div class="xypads" id="xyPads"></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script type="module">
+import { GoogleGenAI } from "https://cdn.jsdelivr.net/npm/@google/genai@2.27.0/+esm";
+
+const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+const SR = 48000;
+
+/* ---------- presets ---------- */
+// share = how much of the prompt mix the moment's own prompt gets (rest = your prompt lines).
+// Moment prompts describe intensity, not new sounds, so the track keeps its identity across moments.
+// fx = local processing applied exactly when the moment lands: "thin" (build), "fat" (drop), or clean.
+const MOMENTS = [
+  { id: "intro",     name: "Intro",     desc: "kick + hats",  c: "#6f6f77", share: .3,  guidance: 4,   density: .25, brightness: .35, drums: true,  bass: false, prompt: "Stripped intro, mostly kick and hi-hats, sparse" },
+  { id: "groove",    name: "Groove",    desc: "locked loop",  c: "#a9a9b0", share: .2,  guidance: 4,   density: .55, brightness: .5,  drums: true,  bass: true,  prompt: "Locked-in hypnotic groove, steady four-on-the-floor" },
+  { id: "build",     name: "Build",     desc: "tension up",   c: "#cfcfd4", share: .3,  guidance: 4,   density: .7,  brightness: .75, drums: true,  bass: false, fx: "thin", prompt: "Tension rising, snare roll, building up, no bass" },
+  { id: "drop",      name: "Drop",      desc: "full power",   c: "#ffffff", share: .3,  guidance: 4.5, density: .85, brightness: .7,  drums: true,  bass: true,  fx: "fat",  prompt: "Kick and sub bass slam back in, heavy, punchy, full and loud" },
+  { id: "breakdown", name: "Breakdown", desc: "no drums",     c: "#8b8b93", share: .3,  guidance: 4,   density: .25, brightness: .55, drums: false, bass: false, prompt: "Breakdown, no kick, floating and spacious" },
+  { id: "outro",     name: "Outro",     desc: "fade out",     c: "#55555c", share: .3,  guidance: 4,   density: .2,  brightness: .3,  drums: true,  bass: false, prompt: "Outro, elements leaving, minimal kick only" },
+];
+// Prompt library: click a single prompt to add/remove it as a channel, or a scene to load a whole mix.
+const LIB = {
+  genres: {
+    "Hypnotic techno": "Hypnotic repetitive techno, rolling percussion, TR-909 drums",
+    "Berlin techno":   "Dark Berlin warehouse techno, rumbling kick, industrial atmosphere",
+    "Acid techno":     "Acid techno, squelchy TB-303 bassline, resonant filter sweeps",
+    "Detroit techno":  "Detroit techno, soulful synth stabs, futuristic pads",
+    "Minimal":         "Minimal techno, clicky percussion, deep sub bass",
+    "Dub techno":      "Dub techno, chord stabs drowned in delay and reverb",
+    "Melodic techno":  "Melodic techno, emotional arpeggios, wide analog pads",
+    "Peak-time":       "Peak-time techno, pounding kick, relentless big room energy",
+    "Hard techno":     "Hard techno, fast distorted kick, aggressive and driving",
+    "Industrial":      "Industrial techno, metallic noise hits, harsh distorted textures",
+    "Raw techno":      "Raw lo-fi techno, gritty analog drums, tape saturation",
+    "Ambient techno":  "Ambient techno, soft kick, floating textures, spacious",
+    "Tech house":      "Tech house, groovy bassline, punchy swinging percussion",
+    "Deep house":      "Deep house, warm Rhodes chords, smooth shuffled groove",
+    "Chicago house":   "Chicago house, jacking drum machine, raw piano riffs",
+    "Progressive":     "Progressive house, evolving plucks, long builds, lush atmosphere",
+    "Afro house":      "Afro house, organic percussion, tribal drums, hypnotic groove",
+    "Lo-fi house":     "Lo-fi house, dusty drums, saturated tape chords",
+    "Electro":         "Electro, 808 breakbeats, robotic synth lead",
+    "90s rave":        "90s rave, breakbeats, hoover synths, euphoric piano",
+    "Breaks":          "Breakbeat, chopped funky drum breaks, heavy bass",
+    "UK garage":       "UK garage, 2-step shuffled drums, chopped vocals, warm sub",
+    "Trance":          "Classic trance, uplifting supersaw chords, driving offbeat bass",
+  },
+  drums: {
+    "909 drums":       "TR-909 drum machine",
+    "808 drums":       "TR-808 drum machine",
+    "Rumble kick":     "Rumbling reverb kick drum",
+    "Distorted kick":  "Hard distorted kick drum",
+    "Rolling hats":    "Rolling sixteenth-note hi-hats",
+    "Open hats":       "Open hi-hats on the offbeat",
+    "Shuffled hats":   "Shuffled swinging hi-hats",
+    "Claps":           "Big claps on two and four",
+    "Ride":            "Shimmering ride cymbal",
+    "Tribal toms":     "Tribal tom drums",
+    "Congas":          "Conga and bongo loop",
+    "Shaker":          "Shaker groove",
+    "Metal perc":      "Metallic percussion hits",
+    "Breakbeat":       "Chopped breakbeat drum loop",
+  },
+  bass: {
+    "Sub bass":        "Deep rolling sub bass",
+    "Offbeat bass":    "Offbeat bassline",
+    "303 acid":        "TB-303 acid line",
+    "Moog bass":       "Moog bassline",
+    "Reese bass":      "Dark detuned reese bass",
+    "Rumble bass":     "Techno rumble bass",
+    "House bass":      "Plucky house bassline",
+    "Distorted bass":  "Distorted gritty bass",
+    "Dub bass":        "Deep dub bassline",
+    "Walking bass":    "Funky walking bassline",
+  },
+  synths: {
+    "Chord stabs":     "Analog chord stabs",
+    "Arpeggio":        "Arpeggiated synth",
+    "Hoover":          "Hoover rave lead",
+    "Supersaw":        "Supersaw lead",
+    "Detroit strings": "Detroit string synth lines",
+    "Rave piano":      "Euphoric rave piano chords",
+    "Rhodes":          "Rhodes electric piano chords",
+    "Organ stabs":     "M1 organ house stabs",
+    "FM bells":        "FM bell melody",
+    "Juno arp":        "Juno arpeggio",
+    "Plucks":          "Short melodic synth plucks",
+    "Modular seq":     "Sequenced modular synth pattern",
+    "Vocal chops":     "Chopped vocal stabs",
+  },
+  pads: {
+    "Warm analog":     "Warm analog pads, slow evolving chords",
+    "Dark drone":      "Dark drone pad, low sustained atmosphere",
+    "Dub chords":      "Dub chord pads, washed in delay and reverb",
+    "Shimmer":         "Shimmering airy pads, high reverb tails",
+    "Glassy FM":       "Glassy FM pads, crystalline bell tones",
+    "Strings":         "Lush string pads, cinematic swell",
+    "Choir":           "Ethereal choir pad, wordless vocal texture",
+    "Detroit pads":    "Futuristic Detroit pads, Juno chord wash",
+    "Granular":        "Granular pad, shifting grainy texture",
+    "Tape choir":      "Warbly tape choir pad",
+  },
+  fx: {
+    "Spacey sweeps":   "Spacey FX sweeps",
+    "Tape delay":      "Tape delay throws",
+    "Dub siren":       "Dub siren effects",
+    "Field rec":       "Field recording textures",
+    "Vinyl":           "Vinyl crackle",
+    "Noise":           "Industrial noise bursts",
+    "Reverse cymbal":  "Reverse cymbal swells",
+    "Radio voices":    "Distant radio voices",
+    "Underwater":      "Underwater muffled ambience",
+    "Glitch":          "Glitchy digital stutters",
+  },
+};
+const SCENES = {
+  "Hypnotic loop":   { e: .55, b: .5,  l: [["genres", "Hypnotic techno", 1], ["bass", "Sub bass", .7], ["pads", "Warm analog", .6], ["bass", "303 acid", .3]] },
+  "Berghain 4am":    { e: .7,  b: .35, l: [["genres", "Berlin techno", 1], ["drums", "Rumble kick", .8], ["pads", "Dark drone", .5], ["drums", "Metal perc", .4]] },
+  "Detroit sunrise": { e: .55, b: .65, l: [["genres", "Detroit techno", 1], ["synths", "Detroit strings", .7], ["drums", "909 drums", .6], ["synths", "Juno arp", .4]] },
+  "Acid warehouse":  { e: .75, b: .6,  l: [["genres", "Acid techno", 1], ["bass", "303 acid", 1.2], ["drums", "909 drums", .7], ["fx", "Noise", .3]] },
+  "Melodic journey": { e: .6,  b: .55, l: [["genres", "Melodic techno", 1], ["synths", "Arpeggio", .8], ["pads", "Warm analog", .6], ["bass", "Sub bass", .6]] },
+  "Dub haze":        { e: .4,  b: .35, l: [["genres", "Dub techno", 1], ["pads", "Dub chords", .8], ["fx", "Tape delay", .5], ["fx", "Vinyl", .3]] },
+  "Minimal groove":  { e: .45, b: .5,  l: [["genres", "Minimal", 1], ["drums", "Shuffled hats", .6], ["bass", "House bass", .5], ["fx", "Glitch", .3]] },
+  "Hard & fast":     { e: .9,  b: .6,  l: [["genres", "Hard techno", 1], ["drums", "Distorted kick", 1], ["synths", "Hoover", .4], ["fx", "Noise", .3]] },
+  "Peak time":       { e: .85, b: .7,  l: [["genres", "Peak-time", 1], ["bass", "Rumble bass", .8], ["drums", "Open hats", .6], ["synths", "Chord stabs", .4]] },
+  "Deep rooftop":    { e: .5,  b: .6,  l: [["genres", "Deep house", 1], ["synths", "Rhodes", .8], ["drums", "Shuffled hats", .6], ["bass", "House bass", .6]] },
+  "Chicago jack":    { e: .6,  b: .65, l: [["genres", "Chicago house", 1], ["drums", "909 drums", .8], ["synths", "Rave piano", .6], ["synths", "Organ stabs", .4]] },
+  "Afro ritual":     { e: .55, b: .55, l: [["genres", "Afro house", 1], ["drums", "Tribal toms", .8], ["drums", "Congas", .6], ["pads", "Choir", .4]] },
+  "Prog bloom":      { e: .55, b: .7,  l: [["genres", "Progressive", 1], ["synths", "Plucks", .7], ["pads", "Shimmer", .6], ["synths", "Supersaw", .4]] },
+  "90s rave":        { e: .8,  b: .75, l: [["genres", "90s rave", 1], ["drums", "Breakbeat", .7], ["synths", "Hoover", .7], ["synths", "Rave piano", .5]] },
+  "Electro drive":   { e: .6,  b: .55, l: [["genres", "Electro", 1], ["drums", "808 drums", .8], ["bass", "Moog bass", .6], ["fx", "Radio voices", .3]] },
+  "Ambient float":   { e: .3,  b: .4,  l: [["genres", "Ambient techno", 1], ["pads", "Granular", .7], ["fx", "Field rec", .5], ["bass", "Sub bass", .5]] },
+  "Lo-fi tape":      { e: .45, b: .45, l: [["genres", "Lo-fi house", 1], ["synths", "Rhodes", .6], ["pads", "Tape choir", .5], ["fx", "Vinyl", .5]] },
+};
+const STYLES = LIB.genres, PADS = LIB.pads;
+const SCALES = [["SCALE_UNSPECIFIED","Auto"],["C_MAJOR_A_MINOR","A min"],["D_FLAT_MAJOR_B_FLAT_MINOR","B♭ min"],["D_MAJOR_B_MINOR","B min"],["E_FLAT_MAJOR_C_MINOR","C min"],["E_MAJOR_D_FLAT_MINOR","C♯ min"],["F_MAJOR_D_MINOR","D min"],["G_FLAT_MAJOR_E_FLAT_MINOR","E♭ min"],["G_MAJOR_E_MINOR","E min"],["A_FLAT_MAJOR_F_MINOR","F min"],["A_MAJOR_G_FLAT_MINOR","F♯ min"],["B_FLAT_MAJOR_G_MINOR","G min"],["B_MAJOR_A_FLAT_MINOR","G♯ min"]];
+
+/* ---------- state ----------
+   `next` is what you're editing; `live` is what Lyria is currently generating. */
+let next = { moment: "groove", layers: SCENES["Hypnotic loop"].l.slice(0, 3).map(([c, k, w]) => ({ text: LIB[c][k], weight: w })), density: .5, brightness: .5, temperature: 1.1, drums: true, bass: true, guidance: 4, bpm: 128, scale: "SCALE_UNSPECIFIED" };
+let live = null;
+let quantBars = 8;
+let session = null, playing = false;
+let ctx, gain, hp, duck, boost, sub, wet, comp, nextTime = 0, clockStart = 0, bpmClock = 128;
+let BUILD_BARS = 8;
+try { BUILD_BARS = +localStorage.getItem("lyria_buildbars") || 8; } catch {}
+let plannedDrop = null;         // beat where the auto drop lands, set when a build starts
+let buildStartBeat = 0, rampStep = -1, buildSrcs = [];
+let pendingLand = null;         // set when a chunk is sent and the new audio hasn't arrived yet
+const marks = [];               // {beat, type:'land', moment}
+const segments = [];            // {startBeat, moment} — moment history, for colouring the strip
+let lastBar = -1, recording = false, rec = [];
+
+/* ---------- utils ---------- */
+const log = (m, c = "") => { const d = document.createElement("div"); d.className = c; d.textContent = `${new Date().toLocaleTimeString()}  ${m}`; $("#log").prepend(d); if (c === "e") setMsg(m, ""); };
+const status = (t, k = "") => { $("#statusTxt").textContent = t; $("#dot").className = "dot " + k; };
+const setMsg = (big, small) => { $("#nextMsg").innerHTML = `${big}<small>${small || "&nbsp;"}</small>`; };
+const moment = id => MOMENTS.find(m => m.id === id);
+const beatAt = t => (t - clockStart) * bpmClock / 60;           // audio-context time -> beat
+const timeAtBeat = b => clockStart + b * 60 / bpmClock;
+const nowBeat = () => (ctx && clockStart && playing) ? beatAt(ctx.currentTime) : -1;
+
+/* ---------- key slot ---------- */
+// The Gemini key lives in the server env (GEMINI_API_KEY) and is fetched from /api/key on connect.
+try { const v = localStorage.getItem("lyria_apiver"); if (v) $("#apiVersion").value = v; } catch {}
+function saveKey() { try { localStorage.setItem("lyria_apiver", $("#apiVersion").value); } catch {} }
+
+/* ---------- connect ---------- */
+$("#connectBtn").onclick = async () => {
+  if (session) { try { session.close(); } catch {} return offline(); }
+  saveKey(); status("connecting…", "busy");
+  let apiKey;
+  try {
+    const r = await fetch("/api/key", { cache: "no-store" });
+    apiKey = (await r.json()).key;
+    if (!r.ok || !apiKey) throw new Error("no key");
+  } catch { status("error", "err"); return setMsg("No API key on the server", "set GEMINI_API_KEY in Vercel → Settings → Environment Variables"); }
+  try {
+    const ai = new GoogleGenAI({ apiKey, apiVersion: $("#apiVersion").value });
+    session = await ai.live.music.connect({
+      model: "models/lyria-realtime-exp",
+      callbacks: {
+        onmessage: onMessage,
+        onerror: e => { log("error: " + (e?.message || e), "e"); status("error", "err"); },
+        onclose: e => { log("connection closed " + (e?.reason || ""), "w"); offline(); },
+      },
+    });
+    status("connected", "on");
+    $("#connectBtn").textContent = "Disconnect";
+    $("#playBtn").disabled = $("#recBtn").disabled = $("#dropBtn").disabled = false;
+    setMsg("Ready", "press play or space");
+    await send(true);
+  } catch (e) { log("connect failed: " + (e?.message || e) + " (check key / try other API version under More)", "e"); status("error", "err"); session = null; }
+};
+function offline() {
+  session = null; playing = false; live = null; nextTime = 0; clockStart = 0;
+  $("#connectBtn").textContent = "Connect"; $("#playBtn").disabled = $("#recBtn").disabled = $("#dropBtn").disabled = true; $("#playBtn").textContent = "▶"; $("#playBtn").classList.remove("on");
+  status("offline"); setMsg("Disconnected", "");
+}
+function onMessage(msg) {
+  if (msg.filteredPrompt) log(`prompt blocked: "${msg.filteredPrompt.text}" ${msg.filteredPrompt.filteredReason || ""}`, "e");
+  for (const c of msg.serverContent?.audioChunks || []) playChunk(c.data);
+}
+
+/* ---------- audio in ---------- */
+const recent = [];   // last scheduled chunks {t, buf}: source material for the stutter fill
+let hold = null;     // drop hold: incoming audio is held until the bass actually returns
+
+function decode(b64) {
+  const bin = atob(b64), bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const pcm = new Int16Array(bytes.buffer, 0, bytes.length >> 1), n = pcm.length / 2;
+  const buf = ctx.createBuffer(2, n, SR), L = buf.getChannelData(0), R = buf.getChannelData(1);
+  for (let i = 0; i < n; i++) { L[i] = pcm[2 * i] / 32768; R[i] = pcm[2 * i + 1] / 32768; }
+  if (recording) rec.push(pcm.slice());
+  return buf;
+}
+let pendingReset = null;
+function playChunk(b64) {
+  if (!ctx || !playing) return;
+  const buf = decode(b64);
+  if (pendingReset) {                                              // new context: start it after the buffered audio, bar 1 there
+    const t = Math.max(nextTime, ctx.currentTime + 0.3);
+    clockStart = nextTime = t; bpmClock = next.bpm; hist.fill(0); histN = 0; hold = null; pendingLand = null;
+    marks.length = segments.length = 0; segments.push({ startBeat: 0, moment: pendingReset }); pendingReset = null;
+  }
+  if (hold) return holdChunk(buf);
+  if (nextTime < ctx.currentTime) {
+    const t = ctx.currentTime + 1.5;                               // cushion against network jitter
+    if (!clockStart) { clockStart = t; bpmClock = live?.bpm || next.bpm; }
+    else { clockStart += t - nextTime; log(`network hiccup: ${(t - nextTime).toFixed(2)}s silence, grid shifted to stay in tempo`, "w"); }
+    nextTime = t;
+  }
+  if (pendingLand) {
+    if (pendingLand.moment === "drop" && plannedDrop != null) return startHold(buf);
+    // First audio generated after a send = where the new chunk becomes audible.
+    const b = beatAt(nextTime);
+    marks.push({ beat: b, moment: pendingLand.moment });
+    momentFx(pendingLand.moment, nextTime);
+    segments.push({ startBeat: b, moment: pendingLand.moment });
+    pendingLand = null;
+  }
+  schedule(buf, nextTime);
+  nextTime += buf.duration;
+}
+function schedule(buf, t, fadeIn) {
+  const src = ctx.createBufferSource(); src.buffer = buf;
+  if (fadeIn) { const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(1, t + .004); src.connect(g).connect(hp); }
+  else src.connect(hp);
+  src.start(t);
+  trackBeat(buf.getChannelData(0), buf.getChannelData(1), t);
+  lowHops(buf, true);
+  recent.push({ t, buf }); while (recent.length > 6) recent.shift();
+  addWave(buf, t);
+}
+// copy [t, t+dur) of already-scheduled audio into a new buffer (null if not available)
+function grab(t, dur) {
+  const n = Math.round(dur * SR), out = ctx.createBuffer(2, n, SR);
+  let got = 0;
+  for (const { t: ct, buf } of recent) {
+    const a = Math.max(0, Math.round((t - ct) * SR)), b = Math.min(buf.length, Math.round((t + dur - ct) * SR));
+    if (b <= a) continue;
+    for (let c = 0; c < 2; c++) out.getChannelData(c).set(buf.getChannelData(c).subarray(a, b), Math.round((ct - t) * SR) + a);
+    got += b - a;
+  }
+  return got >= n * 0.98 ? out : null;
+}
+
+/* Waveform for the timeline: peak per ~10 ms of everything scheduled, keyed by play time. */
+const wave = [];
+function addWave(buf, t) {
+  const L = buf.getChannelData(0), R = buf.getChannelData(1), step = 512, peaks = new Float32Array(Math.ceil(L.length / step));
+  for (let i = 0; i < peaks.length; i++) { let p = 0; for (let j = i * step, e = Math.min(L.length, j + step); j < e; j += 2) p = Math.max(p, Math.abs(L[j]), Math.abs(R[j])); peaks[i] = p; }
+  wave.push({ t, end: t + buf.duration, dt: step / SR, peaks });
+  while (wave.length && wave[0].end < ctx.currentTime - 30) wave.shift();
+}
+function peakAt(t) {
+  for (let i = wave.length - 1; i >= 0; i--) { const w = wave[i]; if (t >= w.t && t < w.end) return w.peaks[Math.floor((t - w.t) / w.dt)] || 0; }
+  return -1;
+}
+
+/* Kick-band energy per 10 ms hop. Used to spot the moment the bass returns in the drop. */
+let lowState = 0, lowBase = [];
+function lowHops(buf, isBase) {
+  const L = buf.getChannelData(0), R = buf.getChannelData(1), out = [];
+  for (let i = 0; i + 480 <= L.length; i += 480) {
+    let e = 0;
+    for (let j = i; j < i + 480; j++) { lowState += 0.0104 * ((L[j] + R[j]) * .5 - lowState); e += lowState * lowState; }   // ~80 Hz
+    out.push(e / 480);
+  }
+  if (isBase) { lowBase.push(...out); if (lowBase.length > 400) lowBase.splice(0, lowBase.length - 400); }
+  return out;
+}
+
+/* ---------- the drop hold ----------
+   Lyria takes a moment to react, so after the drop is sent the next audio is usually still the build,
+   and the bass comes back somewhere later. Audio is held, not played blind:
+   - the build keeps playing (real Lyria audio) right up to the drop bar,
+   - the first beat where the kick-band energy jumps (bass back) is found,
+   - that beat is placed exactly on the drop bar (shift = whole beats → groove stays in phase),
+   - bass early → a grid-locked stutter of the last build beat bridges to the bar;
+     bass not here yet when the bar comes → the drop moves one bar later (up to 3 times).
+   Times: "stream" = where audio would play with no intervention; play = stream + shift. */
+function startHold(buf) {
+  const beat = 60 / bpmClock;
+  let B = timeAtBeat(plannedDrop);
+  if (B < nextTime + 0.05) B = timeAtBeat(Math.ceil(beatAt(nextTime + 0.05) / 4) * 4);   // missed the planned bar: next one
+  const base = lowBase.length ? lowBase.reduce((a, v) => a + v, 0) / lowBase.length : 0;
+  hold = { t0: nextTime, B, cursor: nextTime, shift: 0, chunks: [], len: 0, hops: [], base, moved: 0 };
+  holdChunk(buf);
+}
+function holdChunk(buf) { hold.chunks.push(buf); hold.len += buf.length; hold.hops.push(...lowHops(buf)); holdStep(); }
+// stream [a, b) of held audio as one buffer (clipped to what has arrived)
+function heldSlice(a, b) {
+  const h = hold, i0 = Math.max(0, Math.round((a - h.t0) * SR)), i1 = Math.min(h.len, Math.round((b - h.t0) * SR));
+  if (i1 <= i0) return null;
+  const out = ctx.createBuffer(2, i1 - i0, SR);
+  let o = 0;
+  for (const c of h.chunks) {
+    const a2 = Math.max(i0, o), b2 = Math.min(i1, o + c.length);
+    if (b2 > a2) for (let ch = 0; ch < 2; ch++) out.getChannelData(ch).set(c.getChannelData(ch).subarray(a2 - o, b2 - o), a2 - i0);
+    o += c.length;
+  }
+  return out;
+}
+const heldEnd = () => hold.t0 + hold.len / SR;
+// play held build audio contiguously up to play time `until`
+function playHeld(until) {
+  const h = hold, s = h.cursor - h.shift, buf = heldSlice(s, Math.min(until - h.shift, heldEnd()));
+  if (!buf) return;
+  schedule(buf, h.cursor); h.cursor += buf.duration;
+}
+function findBassReturn() {
+  const h = hold, beat = 60 / bpmClock, hop = 480 / SR, H = h.hops;
+  if (!h.base) return null;
+  // reference = the build's own beats in the held audio (falls back to the pre-hold average)
+  let sum = 0, n = 0;
+  for (let g = Math.ceil(beatAt(h.t0) - 1e-3); ; g++) {
+    const s = timeAtBeat(g) - h.t0, i0 = Math.max(0, Math.floor(s / hop)), i1 = Math.floor((s + beat) / hop);
+    if (i1 > H.length) return null;
+    if (i1 - i0 < 5) continue;
+    let m = 0; for (let i = i0; i < i1; i++) m += H[i];
+    m /= i1 - i0;
+    const ref = n ? Math.min(h.base, sum / n) : h.base;
+    if (m > 2 * ref) return h.t0 + s;                              // stream time of the first "bass is back" beat
+    sum += m; n++;
+  }
+}
+function holdStep() {
+  const h = hold, now = ctx.currentTime, beat = 60 / bpmClock;
+  const Sb = findBassReturn();
+  if (Sb != null && now + 0.06 < h.B) {
+    if (Sb + h.shift <= h.B) { playHeld(Sb + h.shift); stutter(h.B, Sb); }   // bass early: build up to it, stutter to the bar
+    else { playHeld(h.B); if (h.cursor < h.B - 1e-3) stutter(h.B); }        // bass late: build up to the bar, skip the rest
+    return land(Sb);
+  }
+  // no bass yet: keep the build going, but hold back the last unfinished beat (it might be where the bass starts)
+  playHeld(Math.min(h.B, timeAtBeat(Math.floor(beatAt(heldEnd()))) + h.shift));
+  if (now > h.B - 0.12) {
+    if (h.moved < 3) { h.B += 4 * beat; h.moved++; log("drop: bass not back yet, moving the drop one bar later", "w"); }
+    else return land(Sb ?? Math.max(h.t0, h.cursor - h.shift));    // give up waiting: drop with what we have
+  }
+  if (h.cursor < now + 0.15) stutterBeat();                        // Lyria is slow: don't let it go silent
+}
+function land(Sb) {
+  const h = hold, B = h.B, buf = heldSlice(Sb, heldEnd());
+  hold = null; pendingLand = null;
+  if (buf) schedule(buf, B, true);
+  nextTime = B + (buf ? buf.duration : 0);
+  const b = beatAt(B);
+  marks.push({ beat: b, moment: "drop" }); segments.push({ startBeat: b, moment: "drop" });
+  momentFx("drop", B, true);
+}
+// one beat at the grid beat before stream time `s` (held audio, else already-played audio)
+function beatBefore(s) {
+  const beat = 60 / bpmClock, g = timeAtBeat(Math.floor(beatAt(s) + 1e-3) - 1);
+  return heldSlice(g, g + beat) || grab(g + hold.shift, beat) || grab(timeAtBeat(Math.floor(beatAt(hold.cursor)) - 1), beat);
+}
+// grid-locked stutter from the cursor to `until`: whole beats, then 8ths, then 16ths into the bar
+function stutter(until, s) {
+  const h = hold, beat = 60 / bpmClock, src = beatBefore(s ?? h.cursor - h.shift);
+  if (!src) { h.cursor = until; return; }
+  while (h.cursor < until - 1e-4) {
+    const r = (until - h.cursor) / beat, slot = r <= 1 ? beat / 4 : r <= 2 ? beat / 2 : beat;
+    const ss = until - Math.ceil((until - h.cursor) / slot - 1e-6) * slot, end = Math.min(ss + slot, until);
+    slice(src, Math.max(h.cursor, ctx.currentTime), end, ss);
+    h.cursor = end;
+  }
+}
+// starving: repeat one beat in phase and push the rest of the stream one beat later
+function stutterBeat() {
+  const h = hold, beat = 60 / bpmClock, src = beatBefore(h.cursor - h.shift);
+  if (!src) return;
+  const g = timeAtBeat(Math.floor(beatAt(h.cursor) + 1e-3));      // grid beat at/before the cursor
+  slice(src, h.cursor, g + beat, g);
+  slice(src, g + beat, h.cursor + beat, g + beat);
+  h.cursor += beat; h.shift += beat;
+}
+function slice(src, t, end, gridStart) {
+  if (end - t < 0.004) return;
+  const s = ctx.createBufferSource(), env = ctx.createGain();
+  s.buffer = src;
+  env.gain.setValueAtTime(0, t); env.gain.linearRampToValueAtTime(1, t + .002);
+  env.gain.setValueAtTime(1, end - .002); env.gain.linearRampToValueAtTime(0, end);
+  s.connect(env).connect(hp); s.start(t, Math.max(0, t - gridStart), end - t);
+}
+function holdTick() { holdStep(); }
+
+$("#vol").oninput = e => { $("#volV").textContent = Math.round(e.target.value * 100) + "%"; if (gain) gain.gain.value = +e.target.value; };
+
+$("#playBtn").onclick = togglePlay;
+async function togglePlay() {
+  if (!session) return;
+  if (!ctx) {
+    ctx = new AudioContext({ sampleRate: SR });
+    // hp (build thinning/riser) → sub low-shelf → dry + saturated wet → glue comp → duck (pump/gate) → boost → limiter → volume
+    hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 10; hp.Q.value = 4;
+    sub = ctx.createBiquadFilter(); sub.type = "lowshelf"; sub.frequency.value = 90; sub.gain.value = 0;
+    const shaper = ctx.createWaveShaper(), curve = new Float32Array(2048);
+    for (let i = 0; i < curve.length; i++) { const x = i / 1023.5 - 1; curve[i] = Math.tanh(3 * x) / Math.tanh(3); }
+    shaper.curve = curve; shaper.oversample = "4x";
+    wet = ctx.createGain(); wet.gain.value = 0;
+    comp = ctx.createDynamicsCompressor(); comp.threshold.value = -18; comp.ratio.value = 3; comp.attack.value = .01; comp.release.value = .15;
+    const makeup = ctx.createGain(); makeup.gain.value = 1.25;
+    duck = ctx.createGain(); boost = ctx.createGain();
+    const limiter = ctx.createDynamicsCompressor();
+    limiter.threshold.value = -2; limiter.knee.value = 0; limiter.ratio.value = 20; limiter.attack.value = .002; limiter.release.value = .08;
+    gain = ctx.createGain(); gain.gain.value = +$("#vol").value;
+    hp.connect(sub); sub.connect(comp); sub.connect(shaper).connect(wet).connect(comp);
+    comp.connect(makeup).connect(duck).connect(boost).connect(limiter).connect(gain).connect(ctx.destination);
+  }
+  await ctx.resume();
+  if (playing) { session.pause(); playing = false; hold = null; wave.length = 0; nextTime = 0; clockStart = 0; marks.length = segments.length = 0; $("#playBtn").textContent = "▶"; $("#playBtn").classList.remove("on"); setMsg("Paused", ""); return; }
+  playing = true; lastBar = -1; $("#playBtn").textContent = "❚❚"; $("#playBtn").classList.add("on");
+  segments.push({ startBeat: 0, moment: live?.moment || next.moment });
+  session.play();
+}
+
+/* Beat lock: Lyria doesn't tell us where its beats are, so find them. Onsets that are strong in the
+   kick band AND have a click on top (kicks, not offbeat basslines) are folded onto the beat grid;
+   if they sit off-grid, nudge the grid onto them. */
+let lpY = 0, lpH = 0, prevE = 0, prevH = 0, hist = new Float32Array(32), histN = 0;
+function trackBeat(L, R, t0) {
+  if (!clockStart) return;
+  const hop = 480, beatSec = 60 / bpmClock;
+  hist = hist.map(v => v * 0.8);
+  for (let i = 0; i + hop <= L.length; i += hop) {
+    let e = 0, eh = 0;
+    for (let j = i; j < i + hop; j++) {
+      const x = (L[j] + R[j]) * .5;
+      lpY += 0.0156 * (x - lpY); e += lpY * lpY;                   // ~120 Hz: kick body
+      lpH += 0.408 * (x - lpH); eh += (x - lpH) * (x - lpH);       // above ~4 kHz: kick click
+    }
+    const onset = Math.max(0, e - prevE) * Math.sqrt(Math.max(0, eh - prevH) + 1e-6); prevE = e; prevH = eh;
+    const ph = ((t0 + i / SR - clockStart) / beatSec) % 1;
+    hist[Math.floor(((ph % 1) + 1) % 1 * 32)] += onset;
+  }
+  if (++histN < 3) return;
+  const sm = hist.map((v, i) => hist[(i + 31) % 32] + 2 * v + hist[(i + 1) % 32]);
+  let k = 0, mean = 0;
+  sm.forEach((v, i) => { mean += v / 32; if (v > sm[k]) k = i; });
+  if (sm[k] <= 1e-9 || sm[k] < 2.5 * mean) return;                 // no clear kick (breakdown): keep the grid
+  const l = sm[(k + 31) % 32], r = sm[(k + 1) % 32], den = l - 2 * sm[k] + r;
+  let phi = (k + 0.5 + (den ? 0.5 * (l - r) / den : 0)) / 32;      // sub-bin peak
+  if (phi > .5) phi -= 1;
+  if (Math.abs(phi) > 0.02) { clockStart += phi * beatSec * 0.85; hist.fill(0); histN = 0; }
+}
+
+/* ---------- moments: local FX on the audio clock ---------- */
+const BUILD_STYLES = {
+  roll:    { label: "snare roll", prompt: "Snare roll building up, rising tension, no bass" },
+  kick:    { label: "kick roll",  prompt: "Pounding kick drum building up, rising tension, no bass" },
+  rise:    { label: "synth rise", prompt: "Rising synth arpeggio, euphoric tension building, no bass" },
+  sweep:   { label: "sweep",      prompt: "Swelling atmospheric pads and noise sweep, tension rising, no bass" },
+  stutter: { label: "stutter",    prompt: "Choppy rhythmic stabs, hi-hats intensifying, tension rising, no bass" },
+};
+const DROP_PROMPTS = [
+  "Huge techno drop, massive kick, deep powerful sub bass, driving and hard",
+  "Peak-time drop, pounding kick, heavy rolling bassline, full energy",
+  "Hard warehouse drop, distorted kick, big sub bass, relentless",
+  "Big room techno drop, thunderous kick and bass, maximum energy",
+];
+let buildStyle = "random", currentBuild = "roll", buildPrompt = null, dropPrompt = DROP_PROMPTS[0];
+try { buildStyle = localStorage.getItem("lyria_buildstyle") || "random"; } catch {}
+const pick = a => a[Math.floor(Math.random() * a.length)];
+function resolveBuild() {
+  if (buildStyle !== "random") return buildStyle;
+  return pick(Object.keys(BUILD_STYLES).filter(k => k !== currentBuild));   // never the same twice in a row
+}
+
+function momentFx(id, t, exact) {
+  const m = moment(id), beat = 60 / bpmClock, now = ctx.currentTime;
+  // FX go on the bar line, not on the chunk edge (≤2 beats late still counts as that bar).
+  const fxBeat = exact ? Math.round(beatAt(t)) : Math.ceil((beatAt(t) - 2) / 4) * 4;
+  if (!exact) t = Math.max(now + 0.02, timeAtBeat(fxBeat));
+  const from = Math.max(now, t);
+  [hp.frequency, duck.gain, sub.gain, wet.gain, boost.gain].forEach(p => p.cancelAndHoldAtTime ? p.cancelAndHoldAtTime(from) : p.cancelScheduledValues(from));
+  hp.frequency.setValueAtTime(10, t); duck.gain.setValueAtTime(1, t);
+  const fat = m.fx === "fat" && $("#fatFx").checked;
+  sub.gain.setValueAtTime(fat ? 7 : 0, t); wet.gain.setValueAtTime(fat ? .55 : 0, t); boost.gain.setValueAtTime(fat ? 1.35 : 1, t);
+  if (id === "build" && $("#autoBuild").checked) {
+    buildStartBeat = fxBeat; plannedDrop = buildStartBeat + BUILD_BARS * 4; rampStep = -1;
+    buildFx(currentBuild, t, timeAtBeat(plannedDrop));
+    dropPrompt = pick(DROP_PROMPTS);
+    pickMoment("drop");
+  } else if (m.fx === "thin") hp.frequency.exponentialRampToValueAtTime(220, t + 32 * beat);
+  if (id === "drop") {
+    plannedDrop = null; pumpedTo = 0;
+    buildSrcs.forEach(s => { try { s.stop(t); } catch {} }); buildSrcs = [];
+    if (fat) impact(t);
+  }
+}
+
+/* Each build style = its own Lyria prompt + its own local layer. All of them thin the low end,
+   get a little quieter (so the drop jumps out) and open a high-pass riser into the drop bar. */
+function buildFx(style, t0, t1) {
+  const beat = 60 / bpmClock, f = hp.frequency, riser = $("#riser").checked;
+  const tr = riser ? Math.max(t0 + beat, t1 - 8 * beat) : t1;
+  f.exponentialRampToValueAtTime(style === "sweep" ? 450 : 220, tr);
+  if (riser) f.exponentialRampToValueAtTime(style === "sweep" ? 2500 : 1400, t1 - 0.01);
+  boost.gain.linearRampToValueAtTime(.85, t1);
+  if (!riser) return;
+  noiseRiser(t0, t1, style === "sweep" ? .22 : .1);
+  if (style === "roll") roll(t0, t1, snareHit);
+  if (style === "kick") roll(t0, t1, kickHit);
+  if (style === "rise") synthRise(t0, t1);
+  if (style === "stutter") gate(t0, t1);
+  log(`build: ${BUILD_STYLES[style].label}, ${BUILD_BARS} bars`);
+}
+let noiseBuf = null;
+const noise = () => { if (!noiseBuf) { noiseBuf = ctx.createBuffer(1, SR, SR); const d = noiseBuf.getChannelData(0); for (let i = 0; i < SR; i++) d[i] = Math.random() * 2 - 1; } return noiseBuf; };
+function roll(t0, t1, hit) {      // quarters → 8ths → 16ths → 32nds, louder and brighter towards the drop
+  const beat = 60 / bpmClock, len = t1 - t0;
+  for (let t = t0; t < t1 - 1e-3;) {
+    const p = (t - t0) / len, div = p < .5 ? 1 : p < .75 ? 2 : p < .9 ? 4 : 8;
+    if (t >= ctx.currentTime) hit(t, p);
+    t += beat / div;
+  }
+}
+function snareHit(t, p) {
+  const src = ctx.createBufferSource(), bp = ctx.createBiquadFilter(), env = ctx.createGain();
+  src.buffer = noise(); bp.type = "bandpass"; bp.frequency.value = 1500 + 3000 * p; bp.Q.value = 1.2;
+  env.gain.setValueAtTime(0, t); env.gain.linearRampToValueAtTime(.08 + .32 * p * p, t + .002); env.gain.exponentialRampToValueAtTime(.001, t + .09);
+  src.connect(bp).connect(env).connect(duck); src.start(t, Math.random() * .8, .12); buildSrcs.push(src);
+}
+function kickHit(t, p) {
+  const o = ctx.createOscillator(), env = ctx.createGain();
+  o.frequency.setValueAtTime(160, t); o.frequency.exponentialRampToValueAtTime(48, t + .07);
+  env.gain.setValueAtTime(0, t); env.gain.linearRampToValueAtTime(.25 + .45 * p, t + .002); env.gain.exponentialRampToValueAtTime(.001, t + .16);
+  o.connect(env).connect(duck); o.start(t); o.stop(t + .18); buildSrcs.push(o);
+}
+function synthRise(t0, t1) {
+  const s0 = Math.max(ctx.currentTime, t0), lp = ctx.createBiquadFilter(), env = ctx.createGain();
+  lp.type = "lowpass"; lp.Q.value = 6;
+  lp.frequency.setValueAtTime(300, s0); lp.frequency.exponentialRampToValueAtTime(7000, t1);
+  env.gain.setValueAtTime(0, s0); env.gain.linearRampToValueAtTime(.09, t1);
+  lp.connect(env).connect(duck);
+  for (const det of [-9, 9]) {
+    const o = ctx.createOscillator(); o.type = "sawtooth"; o.detune.value = det;
+    o.frequency.setValueAtTime(110, s0); o.frequency.exponentialRampToValueAtTime(880, t1);
+    o.connect(lp); o.start(s0); o.stop(t1); buildSrcs.push(o);
+  }
+}
+function noiseRiser(t0, t1, level) {
+  const src = ctx.createBufferSource(), bp = ctx.createBiquadFilter(), env = ctx.createGain(), s0 = Math.max(ctx.currentTime, t0);
+  src.buffer = noise(); src.loop = true; bp.type = "bandpass"; bp.Q.value = 2;
+  bp.frequency.setValueAtTime(300, s0); bp.frequency.exponentialRampToValueAtTime(7000, t1);
+  env.gain.setValueAtTime(0, s0); env.gain.linearRampToValueAtTime(level, t1);
+  src.connect(bp).connect(env).connect(duck); src.start(s0); src.stop(t1); buildSrcs.push(src);
+}
+function gate(t0, t1) {           // chop the music itself: 8ths in the second half, 16ths in the last bar
+  const beat = 60 / bpmClock, d = duck.gain;
+  for (let t = t0 + (t1 - t0) / 2; t < t1 - 1e-3;) {
+    const slot = t1 - t <= 4 * beat ? beat / 4 : beat / 2;
+    if (t >= ctx.currentTime) { d.setValueAtTime(1, t); d.setValueAtTime(.12, t + slot * .55); }
+    t += slot;
+  }
+  d.setValueAtTime(1, t1);
+}
+function impact(t) {              // sub boom + crash on the drop downbeat
+  const o = ctx.createOscillator(), g = ctx.createGain();
+  o.frequency.setValueAtTime(95, t); o.frequency.exponentialRampToValueAtTime(38, t + .35);
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(.8, t + .004); g.gain.exponentialRampToValueAtTime(.001, t + 1.3);
+  o.connect(g).connect(boost); o.start(t); o.stop(t + 1.4);
+  const n = ctx.createBufferSource(), h = ctx.createBiquadFilter(), e = ctx.createGain();
+  n.buffer = noise(); n.loop = true; h.type = "highpass"; h.frequency.value = 4500;
+  e.gain.setValueAtTime(0, t); e.gain.linearRampToValueAtTime(.22, t + .003); e.gain.exponentialRampToValueAtTime(.001, t + 1.8);
+  n.connect(h).connect(e).connect(boost); n.start(t); n.stop(t + 1.9);
+}
+// sidechain-style pump while the drop plays: dip just after each kick, breathe back before the next
+let pumpedTo = 0;
+function pumpTick(b) {
+  const seg = segments.filter(s => s.startBeat <= b).at(-1);
+  if (seg?.moment !== "drop" || !$("#fatFx").checked) return;
+  const d = duck.gain, horizon = beatAt(ctx.currentTime + 0.5);
+  for (let g = Math.max(pumpedTo, Math.ceil(beatAt(ctx.currentTime + 0.05))); g < horizon; g++) {
+    const t = timeAtBeat(g), beat = 60 / bpmClock;
+    d.setValueAtTime(1, t + .06); d.linearRampToValueAtTime(.72, t + .1); d.linearRampToValueAtTime(1, t + beat * .7);
+    pumpedTo = g + 1;
+  }
+}
+
+/* Build momentum on the model side: every 2 bars push density/brightness up a step.
+   Sent ahead by the buffer length so each step is heard on time; doesn't touch the staged drop. */
+async function buildRamp(b) {
+  const lockedBeats = (nextTime - ctx.currentTime) * bpmClock / 60;
+  const p = Math.min(1, Math.max(0, (b + lockedBeats - buildStartBeat) / (plannedDrop - buildStartBeat)));
+  const step = Math.floor(p * BUILD_BARS / 2);
+  if (p >= 1 || step === rampStep || sending || !session) return;
+  rampStep = step;
+  const m = moment("build"), q = step / (BUILD_BARS / 2);
+  try {
+    await session.setMusicGenerationConfig({ musicGenerationConfig: {
+      bpm: live.bpm, temperature: live.temperature, guidance: live.guidance, muteDrums: !live.drums, muteBass: true,
+      density: +(m.density + (0.98 - m.density) * q).toFixed(2), brightness: +(m.brightness + (0.95 - m.brightness) * q).toFixed(2),
+      ...(live.scale !== "SCALE_UNSPECIFIED" ? { scale: live.scale } : {}) } });
+  } catch (e) { log("ramp failed: " + e.message, "e"); }
+}
+
+/* ---------- sending the next chunk ---------- */
+const changed = () => !!live && JSON.stringify(next) !== JSON.stringify(live);
+let sending = false, sendTimer = null;
+async function send(first) {
+  if (!session || sending) return;
+  sending = true;
+  const m = moment(next.moment);
+  const reset = live && (live.bpm !== next.bpm || live.scale !== next.scale);
+  const cfg = { bpm: next.bpm, density: next.density, brightness: next.brightness, temperature: next.temperature, guidance: next.guidance,
+                muteDrums: !next.drums, muteBass: !next.bass };
+  if (next.scale !== "SCALE_UNSPECIFIED") cfg.scale = next.scale;
+  try {
+    const wp = next.layers.filter(l => l.text.trim() && l.weight > 0).map(l => ({ text: l.text.trim(), weight: l.weight }));
+    if (!wp.length) wp.push({ text: "techno", weight: 1 });
+    const total = wp.reduce((a, p) => a + p.weight, 0);
+    const mw = +(total * m.share / (1 - m.share)).toFixed(2);       // moment prompt gets `share` of the mix
+    const text = m.id === "build" && buildPrompt ? buildPrompt : m.id === "drop" ? dropPrompt : m.prompt;
+    await session.setWeightedPrompts({ weightedPrompts: [...wp, { text, weight: mw }] });
+    await session.setMusicGenerationConfig({ musicGenerationConfig: cfg });
+    if (reset) { await session.resetContext(); pendingReset = next.moment; log(`restart: ${next.bpm} BPM, ${SCALES.find(x => x[0] === next.scale)[1]}`, "w"); }
+    live = structuredClone(next);
+    if (!first && playing) { pendingLand = { moment: next.moment, sentBeat: nowBeat() }; log(`sent → ${m.name}`); }
+  } catch (e) { log("send failed: " + e.message, "e"); }
+  sending = false;
+  refresh();
+}
+$("#dropNow").onclick = () => send();
+
+/* Instant drop: no build, no waiting for the bar. Everything we control locally (impact, filter
+   release, fat fx, pump) hits the very next beat; the drop is sent to Lyria at the same moment
+   and its fuller audio follows as soon as the model reacts. */
+async function dropNow() {
+  if (!session || !playing || !ctx || !clockStart) return;
+  const m = moment("drop"), t = timeAtBeat(Math.ceil(beatAt(ctx.currentTime + 0.03)));
+  hold = null; plannedDrop = null; askBuild(false);
+  Object.assign(next, { moment: "drop", density: m.density, brightness: m.brightness, guidance: m.guidance, drums: m.drums, bass: m.bass });
+  dropPrompt = pick(DROP_PROMPTS);
+  const b = beatAt(t);
+  marks.push({ beat: b, moment: "drop" }); segments.push({ startBeat: b, moment: "drop" });
+  momentFx("drop", t, true);
+  $("#dropBtn").classList.add("hit"); setTimeout(() => $("#dropBtn").classList.remove("hit"), 150);
+  while (sending) await new Promise(r => setTimeout(r, 20));
+  await send();
+  pendingLand = null;                                              // already landed locally; don't fire the FX twice
+  refresh();
+}
+$("#dropBtn").onclick = dropNow;
+
+/* ---------- build length prompt ---------- */
+function askBuild(show = true) {
+  $("#buildAsk").hidden = !show;
+  $$(".mom").forEach(b => b.classList.toggle("asking", show && b.dataset.id === "build"));
+  $$("#buildAsk [data-b]").forEach(b => b.classList.toggle("on", +b.dataset.b === BUILD_BARS));
+  $$("#buildAsk [data-s]").forEach(b => b.classList.toggle("on", b.dataset.s === buildStyle));
+}
+$$("#buildAsk [data-b]").forEach(b => b.onclick = () => {
+  BUILD_BARS = +b.dataset.b;
+  try { localStorage.setItem("lyria_buildbars", BUILD_BARS); } catch {}
+  currentBuild = resolveBuild(); buildPrompt = BUILD_STYLES[currentBuild].prompt;
+  pickMoment("build", true);
+});
+$("#askCancel").onclick = () => askBuild(false);
+$$("#buildAsk [data-s]").forEach(b => b.onclick = () => {
+  buildStyle = b.dataset.s; try { localStorage.setItem("lyria_buildstyle", buildStyle); } catch {}
+  askBuild();
+});
+
+// If the drop feels like it lands on the wrong count of the bar, shift the grid by a beat.
+$("#nudgeL").onclick = () => { if (clockStart) clockStart -= 60 / bpmClock; };
+$("#nudgeR").onclick = () => { if (clockStart) clockStart += 60 / bpmClock; };
+
+/* ---------- editor UI ---------- */
+MOMENTS.forEach((m, i) => {
+  const b = document.createElement("button");
+  b.className = "mom"; b.dataset.id = m.id; b.style.setProperty("--c", m.c);
+  b.innerHTML = `<span class="n">${i + 1}</span><b>${m.name}</b><small>${m.desc}</small>`;
+  b.onclick = () => pickMoment(m.id);
+  $("#moments").appendChild(b);
+});
+function pickMoment(id, confirmed) {
+  // Drop always needs a build in front of it: queue the build, the drop follows automatically.
+  if (id === "drop" && $("#autoBuild").checked && live && live.moment !== "build" && plannedDrop == null) id = "build";
+  // Picking a build: first ask how long it should run before the drop.
+  if (id === "build" && !confirmed && $("#autoBuild").checked) return askBuild();
+  askBuild(false);
+  if (id !== "drop") plannedDrop = null;
+  const m = moment(id);
+  Object.assign(next, { moment: id, density: m.density, brightness: m.brightness, guidance: m.guidance, drums: m.drums, bass: m.bass });
+  refresh();
+}
+const CAT_LABEL = { genres: "Genres", drums: "Drums", bass: "Bass", synths: "Synths", pads: "Pads", fx: "FX" };
+const esc = t => t.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+function toggleLayer(text) {
+  const i = next.layers.findIndex(l => l.text === text);
+  if (i >= 0) next.layers.splice(i, 1); else { next.layers.push({ text, weight: 0.6 }); selLayer = next.layers.length - 1; }
+  renderLayers(); refresh();
+}
+// Library = single prompts, all visible, grouped by category; the search box filters, Enter adds your own text.
+function renderChips() {
+  const q = $("#libSearch").value.trim().toLowerCase();
+  let h = "";
+  for (const c of Object.keys(LIB)) {
+    const items = Object.entries(LIB[c]).filter(([n, t]) => !q || n.toLowerCase().includes(q) || t.toLowerCase().includes(q));
+    if (!items.length) continue;
+    h += `<div class="lgroup"><div class="lbl" style="--c:var(--c-${c})"><i></i>${CAT_LABEL[c]}</div><div class="chips">` +
+         items.map(([n, t]) => `<button class="chip" data-text="${esc(t)}" title="${esc(t)}" style="--c:var(--c-${c})"><i></i>${n}</button>`).join("") + `</div></div>`;
+  }
+  $("#chips").innerHTML = h || `<div class="libempty">No preset matches. Press <b>Enter</b> to add “${esc($("#libSearch").value.trim())}” as a prompt.</div>`;
+  $$("#chips .chip").forEach(c => c.onclick = () => toggleLayer(c.dataset.text));
+  refresh();
+}
+$("#libSearch").oninput = renderChips;
+$("#libSearch").onkeydown = e => {
+  if (e.key !== "Enter") return;
+  const t = e.target.value.trim(); if (!t) return;
+  const hit = Object.values(LIB).flatMap(Object.values).find(x => x.toLowerCase() === t.toLowerCase());
+  if (!next.layers.some(l => l.text === (hit || t))) toggleLayer(hit || t);
+  e.target.value = ""; renderChips();
+};
+// scenes: a compact starting point, not the main way in
+$("#sceneSel").innerHTML = `<option value="">Load a scene…</option>` + Object.keys(SCENES).map(n => `<option>${n}</option>`).join("");
+$("#sceneSel").onchange = e => {
+  const sc = SCENES[e.target.value]; e.target.value = ""; if (!sc) return;
+  next.layers = sc.l.map(([g, k, w]) => ({ text: LIB[g][k], weight: w }));
+  Object.assign(next, { density: sc.e, brightness: sc.b });
+  selLayer = 0; renderLayers(); refresh();
+};
+// Prompt layers: each is a text + its own weight, so you can dial styles up and down.
+let selLayer = 0;
+const shortName = t => (t || "empty").split(",")[0].slice(0, 26);
+const catOf = t => Object.keys(LIB).find(c => Object.values(LIB[c]).includes(t)) || "custom";
+// "▲ FADER 02 · BASS": which fader the red prompt bar is editing
+function editTag() {
+  const l = next.layers[selLayer];
+  $("#editTag").textContent = l ? `▲ FADER ${String(selLayer + 1).padStart(2, "0")} · ${catOf(l.text)}` : "▲ NO FADER";
+}
+// select a channel for the red prompt bar without re-rendering (so a fader drag isn't interrupted)
+function selectLayer(i) {
+  if (i === selLayer) return;
+  selLayer = i;
+  $$(".layer").forEach((st, k) => st.classList.toggle("sel", k === i));
+  $("#layerEdit").value = next.layers[i]?.text ?? "";
+  editTag();
+}
+function renderLayers() {
+  $("#layers").innerHTML = "";
+  selLayer = Math.min(selLayer, next.layers.length - 1);
+  next.layers.forEach((l, i) => {
+    const st = document.createElement("div"); st.className = "layer" + (i === selLayer ? " sel" : "");
+    st.innerHTML = `<i class="cbar"></i><span class="ctag">${String(i + 1).padStart(2, "0")} · ${catOf(l.text)}</span><span class="w"></span><input class="vf" type="range" min="0" max="2" step="0.05" /><button class="name"></button><button class="x" title="Remove channel">×</button>`;
+    st.style.setProperty("--c", `var(--c-${catOf(l.text)})`); st.style.setProperty("--cc", `var(--c-${catOf(l.text)})`);
+    const [, , , rng, name, x] = st.children;
+    rng.value = l.weight; name.textContent = shortName(l.text); name.title = l.text;
+    rng.oninput = () => { l.weight = +rng.value; refresh(); };
+    name.onclick = () => { selectLayer(i); $("#layerEdit").focus(); };
+    st.onpointerdown = e => { if (!e.target.closest(".x")) selectLayer(i); };   // touching any part of a strip (fader included) selects it
+    x.onclick = () => { next.layers.splice(i, 1); renderLayers(); refresh(); };
+    $("#layers").appendChild(st);
+  });
+  $("#layerEdit").value = next.layers[selLayer]?.text ?? "";
+  editTag();
+  $("#layerEdit").disabled = !next.layers.length;
+  if (XY[0].el) xyOptions();
+}
+$("#layerEdit").oninput = e => {
+  const l = next.layers[selLayer]; if (!l) return;
+  l.text = e.target.value;
+  const n = $$(".layer .name")[selLayer]; if (n) { n.textContent = shortName(l.text); n.title = l.text; }
+  editTag();
+  refresh();
+};
+$("#addLayer").onclick = () => { next.layers.push({ text: "", weight: 1 }); selLayer = next.layers.length - 1; renderLayers(); refresh(); $("#layerEdit").focus(); };
+/* ---------- XY modulators ----------
+   Drag the dot: X and Y each drive any parameter or prompt weight (pick in the menus).
+   Filled dot = next chunk, hollow ring = what's playing now. */
+const XY = [{ x: "density", y: "brightness" }, { x: "layer2", y: "temperature" }];
+const targets = () => [
+  { id: "density", label: "Energy", min: 0, max: 1 }, { id: "brightness", label: "Brightness", min: 0, max: 1 },
+  { id: "temperature", label: "Variation", min: .3, max: 2.5 }, { id: "guidance", label: "Prompt strength", min: 0, max: 6 },
+  ...next.layers.map((l, i) => ({ id: "layer" + i, label: (l.text || "prompt " + (i + 1)).split(",")[0].slice(0, 22), min: 0, max: 2 })),
+];
+const tgt = id => targets().find(t => t.id === id) || targets()[0];
+const getV = (o, id) => id.startsWith("layer") ? o?.layers[+id.slice(5)]?.weight : o?.[id];
+function setV(id, v) { v = Math.round(v * 100) / 100; if (id.startsWith("layer")) { const l = next.layers[+id.slice(5)]; if (l) l.weight = v; } else next[id] = v; }
+XY.forEach(pad => {
+  const wrap = document.createElement("div");
+  wrap.innerHTML = `<div class="xy"><div class="cross" style="left:50%;top:0;bottom:0;width:1px"></div><div class="cross" style="top:50%;left:0;right:0;height:1px"></div><div class="ghost"></div><div class="dot"></div></div>
+    <div class="axes"><label>x <select data-a="x"></select></label><label>y <select data-a="y"></select></label></div>`;
+  $("#xyPads").appendChild(wrap);
+  pad.el = wrap;
+  const box = wrap.querySelector(".xy");
+  const move = e => {
+    const r = box.getBoundingClientRect();
+    const fx = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), fy = Math.min(1, Math.max(0, 1 - (e.clientY - r.top) / r.height));
+    const tx = tgt(pad.x), ty = tgt(pad.y);
+    setV(tx.id, tx.min + fx * (tx.max - tx.min)); setV(ty.id, ty.min + fy * (ty.max - ty.min));
+    refresh();
+  };
+  box.onpointerdown = e => { box.setPointerCapture(e.pointerId); move(e); box.onpointermove = move; };
+  box.onpointerup = box.onpointercancel = () => { box.onpointermove = null; };
+  wrap.querySelectorAll("select").forEach(sel => sel.onchange = () => { pad[sel.dataset.a] = sel.value; refresh(); });
+});
+function xyOptions() {
+  for (const pad of XY) for (const a of ["x", "y"]) {
+    if (!targets().some(t => t.id === pad[a])) pad[a] = "density";
+    const sel = pad.el.querySelector(`select[data-a="${a}"]`);
+    sel.innerHTML = targets().map(t => `<option value="${t.id}">${t.label}</option>`).join("");
+    sel.value = pad[a];
+  }
+}
+function xyUpdate() {
+  for (const pad of XY) {
+    const tx = tgt(pad.x), ty = tgt(pad.y), pos = o => [(getV(o, tx.id) - tx.min) / (tx.max - tx.min), (getV(o, ty.id) - ty.min) / (ty.max - ty.min)];
+    const place = (el, [fx, fy]) => { el.style.left = fx * 100 + "%"; el.style.top = (1 - fy) * 100 + "%"; };
+    const dot = pad.el.querySelector(".dot"), ghost = pad.el.querySelector(".ghost");
+    place(dot, pos(next));
+    const lp = live && pos(live);
+    ghost.style.display = lp && lp.every(Number.isFinite) ? "" : "none";
+    if (lp) place(ghost, lp);
+    dot.classList.toggle("changed", !!live && (getV(live, tx.id) !== getV(next, tx.id) || getV(live, ty.id) !== getV(next, ty.id)));
+  }
+}
+renderLayers();
+const fmt = { density: v => Math.round(v * 100) + "%", brightness: v => Math.round(v * 100) + "%", temperature: v => (+v).toFixed(2), bpm: v => v };
+$$(".sl[data-k]").forEach(s => s.querySelector("input").oninput = e => { next[s.dataset.k] = +e.target.value; refresh(); });
+$$("[data-t]").forEach(b => b.onclick = () => { next[b.dataset.t] = !next[b.dataset.t]; refresh(); });
+/* Key: 12 keys (named by their minor tonic, the usual home for techno) + a piano showing the notes it follows. */
+const NOTE = ["C", "C♯", "D", "E♭", "E", "F", "F♯", "G", "A♭", "A", "B♭", "B"];
+const keyRoot = v => SCALES.findIndex(s => s[0] === v) - 1;          // major root 0..11, -1 = auto
+$("#keys").innerHTML = SCALES.map(([v, n]) => `<button data-v="${v}" class="${v === "SCALE_UNSPECIFIED" ? "auto" : ""}">${v === "SCALE_UNSPECIFIED" ? "Auto" : n}</button>`).join("");
+$$("#keys button").forEach(b => b.onclick = () => { next.scale = b.dataset.v; refresh(); });
+const WHITE = [0, 2, 4, 5, 7, 9, 11], BLACK = { 1: 0, 3: 1, 6: 3, 8: 4, 10: 5 };
+function drawPiano(v) {
+  const root = keyRoot(v), inScale = root < 0 ? [] : [0, 2, 4, 5, 7, 9, 11].map(d => (root + d) % 12), tonic = root < 0 ? -1 : (root + 9) % 12;
+  const W = $("#piano").clientWidth || 290, ww = W / 14;               // two octaves
+  let h = "";
+  for (let o = 0; o < 2; o++) {
+    WHITE.forEach((n, k) => h += `<i class="w ${inScale.includes(n) ? "in" : ""} ${n === tonic ? "root" : ""}" style="left:${(o * 7 + k) * ww}px;width:${ww}px"></i>`);
+    for (const [n, k] of Object.entries(BLACK)) h += `<i class="b ${inScale.includes(+n) ? "in" : ""} ${+n === tonic ? "root" : ""}" style="left:${(o * 7 + k + 1) * ww - ww * .3}px;width:${ww * .6}px"></i>`;
+  }
+  $("#piano").innerHTML = h;
+  $("#knotes").textContent = root < 0 ? "any notes" : [0, 2, 3, 5, 7, 8, 10].map(d => NOTE[(tonic + d) % 12]).join(" ");
+}
+$$("#quant button").forEach(b => b.onclick = () => { $$("#quant button").forEach(x => x.classList.remove("on")); b.classList.add("on"); quantBars = +b.dataset.q; if (!quantBars && changed()) send(); refresh(); });
+
+function refresh() {
+  $$(".sl[data-k]").forEach(s => {
+    const k = s.dataset.k; s.querySelector("input").value = next[k];
+    s.querySelector("label span").textContent = fmt[k](next[k]);
+    s.classList.toggle("changed", !!live && live[k] !== next[k]);
+  });
+  $$("[data-t]").forEach(b => { b.classList.toggle("off", !next[b.dataset.t]); b.classList.toggle("changed", !!live && live[b.dataset.t] !== next[b.dataset.t]); });
+  $$(".mom").forEach(b => { b.classList.toggle("now", b.dataset.id === (live?.moment)); b.classList.toggle("next", changed() && b.dataset.id === next.moment && next.moment !== live.moment); });
+  $$(".chip[data-text]").forEach(c => c.classList.toggle("on", next.layers.some(l => l.text === c.dataset.text)));
+  $$(".layer").forEach((row, i) => {
+    const l = next.layers[i], was = live?.layers.find(x => x.text === l.text);
+    row.querySelector(".w").textContent = l.weight.toFixed(2);
+    row.querySelector("input[type=range]").value = l.weight;
+    row.classList.toggle("zero", l.weight === 0);
+    row.classList.toggle("changed", !!live && (!was || was.weight !== l.weight));
+  });
+  const playingKey = live?.scale ?? next.scale;
+  $$("#keys button").forEach(b => { b.classList.toggle("on", b.dataset.v === playingKey); b.classList.toggle("next", !!live && b.dataset.v === next.scale && next.scale !== live.scale); });
+  drawPiano(next.scale);
+  $$(".vf").forEach(r => r.style.setProperty("--v", ((r.value - r.min) / (r.max - r.min) * 100) + "%"));
+  const kn = SCALES.find(x => x[0] === playingKey)?.[1];
+  $("#hdrInfo").innerHTML = `<b>${live?.bpm ?? next.bpm}</b> BPM`;
+  const nk = SCALES.find(x => x[0] === next.scale)?.[1];
+  $("#keyBtnTxt").textContent = (playingKey === "SCALE_UNSPECIFIED" ? "Auto" : kn) + (live && next.scale !== live.scale ? ` → ${next.scale === "SCALE_UNSPECIFIED" ? "Auto" : nk}` : "");
+  $$(".scene").forEach(c => c.classList.toggle("on", JSON.stringify(SCENES[c.dataset.s].l.map(([g, k, w]) => LIB[g][k])) === JSON.stringify(next.layers.map(l => l.text))));
+  xyUpdate();
+  if (playing && !quantBars && changed() && !planned()) { clearTimeout(sendTimer); sendTimer = setTimeout(() => send(), 250); }
+}
+
+/* ---------- clock + boundary trigger ---------- */
+const planned = () => plannedDrop != null && next.moment === "drop";
+function nextBoundaryBeat(b) { if (planned()) return plannedDrop; const q = quantBars * 4; return q ? Math.ceil((b + 0.001) / q) * q : b; }
+function loop() {
+  requestAnimationFrame(loop);
+  const b = nowBeat();
+  if (b >= 0) {
+    const bar = Math.floor(b / 4);
+    $("#clock").textContent = `bar ${bar + 1}.${Math.floor(b % 4) + 1}`;
+    // Send a little before the boundary so the new audio lands close to it:
+    // everything already buffered is locked, so the earliest change is at the buffer's end.
+    if (live?.moment === "build" && planned()) buildRamp(b);
+    if (changed() && (quantBars || planned())) {
+      const target = nextBoundaryBeat(b);
+      const lockedBeats = (nextTime - ctx.currentTime) * bpmClock / 60;
+      if (b + lockedBeats >= target - 2) send();
+    }
+    if (hold) holdTick();
+    pumpTick(b);
+    lastBar = bar;
+    updateMsg(b);
+  }
+  draw(b);
+}
+function updateMsg(b) {
+  const secs = beats => (beats * 60 / bpmClock).toFixed(1);
+  if (pendingLand) return setMsg(`<span style="color:var(--green)">Sent: ${moment(pendingLand.moment).name}</span>`, "waiting for new audio…");
+  const lastMark = marks.at(-1);
+  if (lastMark && b < lastMark.beat) return setMsg(`<span style="color:var(--green)">New chunk in ${secs(lastMark.beat - b)}s</span>`, `${moment(lastMark.moment).name} is coming`);
+  if (changed()) {
+    if (!quantBars) return setMsg(`<span style="color:var(--amber)">Sending…</span>`, "");
+    const tb = nextBoundaryBeat(b), bars = Math.ceil((tb - b) / 4);
+    return setMsg(`<span style="color:var(--amber)">Next chunk in ${bars} bar${bars > 1 ? "s" : ""}</span>`, `${secs(tb - b)}s · ${moment(next.moment).name}`);
+  }
+  setMsg(moment(live?.moment || next.moment).name, "change something to stage the next chunk");
+}
+
+/* ---------- timeline strip ----------
+   coloured band = moment, lighter band = already generated (locked),
+   amber line = where the next chunk will drop, green line = where a new chunk actually started. */
+function draw(b) {
+  const cv = $("#strip"), g = cv.getContext("2d"), W = cv.width, H = cv.height;
+  g.clearRect(0, 0, W, H);
+  const span = 32, past = 10, bpx = W / span, cur = b < 0 ? 0 : b, start = cur - past;
+  const X = beat => (beat - start) * bpx;
+  const top = 44, bot = H - 30, mid = (top + bot) / 2, amp = (bot - top) / 2;
+  g.font = "500 17px 'JetBrains Mono'"; g.textAlign = "left";
+
+  // bar grid: faint lines, phrase lines brighter with the bar number
+  for (let beat = Math.ceil(start); beat <= start + span; beat++) {
+    if (beat < 0 || beat % 4) continue;
+    const phrase = quantBars && beat % (quantBars * 4) === 0;
+    g.fillStyle = phrase ? "#3a3a40" : "#1f1f23";
+    g.fillRect(X(beat), top, phrase ? 2 : 1, bot - top);
+    if (phrase) { g.fillStyle = "#5a5a62"; g.fillText(beat / 4 + 1, X(beat) + 6, H - 6); }
+  }
+  g.fillStyle = "#26262b"; g.fillRect(0, mid, W, 1);
+  if (b < 0) { g.fillStyle = "#4a4a52"; g.fillText("WAVEFORM APPEARS WHEN AUDIO PLAYS", 0, mid - 10); return; }
+
+  // waveform: mirrored peaks; heard = white, generated-but-not-heard = grey
+  const now = ctx.currentTime, col = 3;
+  for (let x = 0; x < W; x += col) {
+    const t = timeAtBeat(start + (x + col / 2) / bpx), p = peakAt(t);
+    if (p < 0) continue;
+    const h = Math.max(1.5, Math.pow(p, 0.8) * amp);
+    g.fillStyle = t <= now ? "#f4f4f5" : "#55555c";
+    g.fillRect(x, mid - h, 1.4, h * 2);
+  }
+
+  const marker = (x, text, dashed, strong) => {
+    g.strokeStyle = g.fillStyle = strong ? "#ffffff" : "#9a9aa2"; g.lineWidth = 2; g.setLineDash(dashed ? [6, 6] : []);
+    g.beginPath(); g.moveTo(x, top - 8); g.lineTo(x, bot); g.stroke(); g.setLineDash([]);
+    if (text) {
+      const right = g.textAlign === "right" || x + 8 + g.measureText(text).width > W;   // flip labels that would run off the edge
+      g.textAlign = right ? "right" : "left"; g.fillText(text, right ? x - 8 : x + 8, 24); g.textAlign = "left";
+    }
+  };
+  for (const m of marks) if (X(m.beat) >= 0 && X(m.beat) < W) marker(X(m.beat), moment(m.moment).name.toLowerCase(), false, false);
+  if (changed() && (quantBars || planned())) {
+    const x = X(nextBoundaryBeat(b)), off = x > W - 4;              // boundary beyond the window: pin to the edge
+    if (off) { g.textAlign = "right"; marker(W - 4, `next · ${moment(next.moment).name.toLowerCase()} →`, true, true); g.textAlign = "left"; }
+    else marker(x, "next · " + moment(next.moment).name.toLowerCase(), true, true);
+  }
+  if (pendingLand || hold) marker(X(beatAt(Math.max(nextTime, now))), "incoming…", true, false);
+
+  // playhead
+  g.fillStyle = "#ffffff"; g.fillRect(X(cur) - 1, top - 14, 3, bot - top + 14);
+}
+
+/* ---------- record ---------- */
+$("#recBtn").onclick = () => {
+  if (!recording) { rec = []; recording = true; $("#recBtn").classList.add("on"); $("#recBtn").innerHTML = "■ <b>STOP · SAVE</b>"; return; }
+  recording = false; $("#recBtn").classList.remove("on"); $("#recBtn").innerHTML = "● <b>REC</b>";
+  const n = rec.reduce((a, c) => a + c.length, 0); if (!n) return;
+  const data = new Int16Array(n); let o = 0; for (const c of rec) { data.set(c, o); o += c.length; }
+  const h = new DataView(new ArrayBuffer(44)), w = (p, s) => [...s].forEach((c, i) => h.setUint8(p + i, c.charCodeAt(0)));
+  w(0, "RIFF"); h.setUint32(4, 36 + data.byteLength, true); w(8, "WAVE"); w(12, "fmt "); h.setUint32(16, 16, true); h.setUint16(20, 1, true);
+  h.setUint16(22, 2, true); h.setUint32(24, SR, true); h.setUint32(28, SR * 4, true); h.setUint16(32, 4, true); h.setUint16(34, 16, true); w(36, "data"); h.setUint32(40, data.byteLength, true);
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([h, data], { type: "audio/wav" }));
+  a.download = `lyria_${Date.now()}.wav`; a.click();
+};
+
+/* ---------- keys ---------- */
+/* ---------- popovers + rail tabs ---------- */
+function popToggle(id, show) {
+  for (const p of ["#keyPop", "#setPop"]) $(p).hidden = p === id ? !(show ?? $(p).hidden) : true;
+  if (id === "#keyPop" && !$("#keyPop").hidden) drawPiano(next.scale);
+}
+$("#keyBtn").onclick = e => { e.stopPropagation(); popToggle("#keyPop"); };
+$("#setBtn").onclick = e => { e.stopPropagation(); popToggle("#setPop"); };
+$$(".popbox").forEach(p => p.onclick = e => e.stopPropagation());
+document.addEventListener("click", () => popToggle(null));
+$$(".railtabs button").forEach(b => b.onclick = () => {
+  $$(".railtabs button").forEach(x => x.classList.toggle("on", x === b));
+  $("#libPanel").hidden = b.dataset.r !== "lib"; $("#modPanel").hidden = b.dataset.r !== "mod";
+});
+
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") popToggle(null);
+  if (e.target.matches("input[type=text], input[type=password], select")) { if (e.key === "Enter" && e.target.id === "layerEdit") send(); return; }
+  if (!$("#buildAsk").hidden) {                                     // build length prompt is open
+    const opts = $$("#buildAsk [data-b]");
+    if (/^[1-5]$/.test(e.key)) return opts[+e.key - 1].click();
+    if (e.key === "Enter") return opts.find(b => +b.dataset.b === BUILD_BARS)?.click();
+    if (e.key === "Escape") return askBuild(false);
+  }
+  if (e.code === "Space") { e.preventDefault(); togglePlay(); }
+  else if (e.key === "Enter") send();
+  else if (/^[1-6]$/.test(e.key)) pickMoment(MOMENTS[+e.key - 1].id);
+  else if (e.key === "d" || e.key === "D") dropNow();
+});
+
+renderChips(); refresh(); loop();
+addEventListener("resize", () => drawPiano(next.scale));
+</script>
+</body>
+</html>
