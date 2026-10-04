@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Sonatick: three faders at different levels, the prompt one in red -->
+  <rect width="64" height="64" fill="#000"/>
+  <rect x="9" y="26" width="12" height="29" fill="#fff"/>
+  <rect x="26" y="9" width="12" height="46" fill="#ff2a1a"/>
+  <rect x="43" y="35" width="12" height="20" fill="#fff"/>
+  <rect x="7" y="23" width="16" height="4" fill="#fff"/>
+  <rect x="24" y="6" width="16" height="4" fill="#ff2a1a"/>
+  <rect x="41" y="32" width="16" height="4" fill="#fff"/>
+</svg>
