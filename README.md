@@ -10,7 +10,17 @@ Prompt faders, moments (intro → build → drop), instant drop, key, XY modulat
 3. Deploy, open the URL, press **Connect**, then **▶**.
 
 The key is served to the page by `api/key.js` because the browser connects to Gemini directly.
-Anyone who can open the deployment can read it, so use a test/restricted key or enable Vercel password protection.
+
+## Login (Google + email, via Clerk) — optional but recommended
+
+With these set, the app sits behind a sign-in screen and `/api/key` only serves signed-in users
+(without them the app is open and anyone can read the key):
+
+1. Create an application at https://dashboard.clerk.com → enable **Google** and **Email** sign-in.
+2. Vercel → Environment Variables → add `CLERK_PUBLISHABLE_KEY` (`pk_…`) and `CLERK_SECRET_KEY` (`sk_…`), redeploy.
+3. Who's in: Clerk dashboard → **Users** (sign-up date, last active).
+
+For a production Clerk instance, Google sign-in needs your own Google OAuth client (Clerk docs → Social connections → Google).
 
 ## Local
 

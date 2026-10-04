@@ -1,0 +1,8 @@
+{
+  "name": "sonatick",
+  "private": true,
+  "description": "Real-time techno on Google Lyria RealTime",
+  "dependencies": {
+    "@clerk/backend": "^3.22.0"
+  }
+}

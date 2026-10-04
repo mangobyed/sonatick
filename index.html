@@ -263,6 +263,16 @@
   .xy .cross { position: absolute; background: #2a2a2a; pointer-events: none; }
   .axes { display: flex; gap: 14px; font: 500 10px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--dim); margin-top: 8px; }
   .axes select { max-width: 150px; }
+  /* ---------- login gate ---------- */
+  #gate { position: fixed; inset: 0; z-index: 90; display: flex; align-items: center; justify-content: center; padding: 24px; overflow-y: auto;
+          background: #000 radial-gradient(#141414 1px, transparent 1.2px) 0 0 / 22px 22px; }
+  #gate[hidden] { display: none; }
+  .gatecard { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  .gatelogo { font: 900 64px/1 var(--display); font-stretch: 125%; text-transform: uppercase; }
+  .gatesub { font: 500 11px var(--mono); letter-spacing: .24em; text-transform: uppercase; color: var(--red); margin-bottom: 14px; }
+  .gatemsg { font: 500 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--dim); max-width: 380px; text-align: center; }
+  .userbtn:empty { display: none; }
+  .userbtn { display: flex; align-items: center; }
   /* ---------- rotate screen: portrait phones can't use the app ---------- */
   #rotate { display: none; }
   @media (orientation: portrait) and (max-width: 820px) {
@@ -282,6 +292,15 @@
   <div class="phone"></div>
   <b>Rotate your phone</b>
   <small>Sonatick only works in landscape</small>
+</div>
+<!-- login gate (only when Clerk is configured) -->
+<div id="gate" hidden>
+  <div class="gatecard">
+    <b class="gatelogo">Sonatick</b>
+    <small class="gatesub">Sign in to play · Google or email</small>
+    <div id="signin"></div>
+    <div id="gateMsg" class="gatemsg"></div>
+  </div>
 </div>
 <div class="app">
   <!-- top bar: identity, state, set-and-forget controls -->
@@ -322,6 +341,7 @@
     </div>
     <span class="spacer"></span>
     <div class="key">
+      <div id="userBtn" class="userbtn"></div>
       <button class="pill primary" id="connectBtn">Connect</button>
     </div>
   </header>
@@ -566,13 +586,56 @@ addEventListener("unhandledrejection", e => log("error: " + (e.reason?.message |
 try { const v = localStorage.getItem("lyria_apiver"); if (v) $("#apiVersion").value = v; } catch {}
 function saveKey() { try { localStorage.setItem("lyria_apiver", $("#apiVersion").value); } catch {} }
 
+/* ---------- login (Clerk) ----------
+   /api/config returns the publishable key from Vercel env. With it, the app sits behind a sign-in gate
+   (Google + email via Clerk) and Connect sends the session token so /api/key only serves signed-in users.
+   Without it the app stays open, exactly as before. Users + last activity: Clerk dashboard → Users. */
+const CLERK_LOOK = {
+  variables: {
+    colorPrimary: "#ff2a1a", colorBackground: "#0a0a0a", colorForeground: "#ffffff", colorText: "#ffffff",
+    colorMutedForeground: "#8c8c8c", colorTextSecondary: "#8c8c8c", colorInput: "#000000", colorInputBackground: "#000000",
+    colorInputForeground: "#ffffff", colorInputText: "#ffffff", colorNeutral: "#ffffff", colorDanger: "#ff2a1a",
+    borderRadius: "0px", fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+  },
+};
+async function initAuth() {
+  let pk = null;
+  try { pk = (await (await fetch("/api/config", { cache: "no-store" })).json()).clerkPublishableKey; } catch {}
+  if (!pk) return false;                                          // login not configured: open app
+  $("#gate").hidden = false;
+  try {
+    const fapi = atob(pk.split("_")[2]).replace(/\$$/, "");          // Clerk frontend API host is encoded in the publishable key
+    const load = (src, attrs = {}) => new Promise((ok, fail) => {
+      const el = document.createElement("script"); el.src = src; el.crossOrigin = "anonymous"; el.async = true;
+      Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
+      el.onload = ok; el.onerror = () => fail(new Error("couldn't load Clerk")); document.head.appendChild(el);
+    });
+    await load(`https://${fapi}/npm/@clerk/ui@1/dist/ui.browser.js`);
+    await load(`https://${fapi}/npm/@clerk/clerk-js@6/dist/clerk.browser.js`, { "data-clerk-publishable-key": pk });
+    await window.Clerk.load({ ui: { ClerkUI: window.__internal_ClerkUICtor }, appearance: CLERK_LOOK });
+  } catch (e) { $("#gateMsg").textContent = "Login unavailable: " + e.message; return true; }
+  let mounted = null;
+  const sync = () => {
+    const signedIn = window.Clerk.isSignedIn;
+    $("#gate").hidden = signedIn;
+    if (signedIn && mounted !== "user") { if (mounted === "in") window.Clerk.unmountSignIn($("#signin")); window.Clerk.mountUserButton($("#userBtn")); mounted = "user"; }
+    if (!signedIn && mounted !== "in") { if (mounted === "user") { window.Clerk.unmountUserButton($("#userBtn")); if (session) { try { session.close(); } catch {} offline(); } } window.Clerk.mountSignIn($("#signin")); mounted = "in"; }
+  };
+  sync(); window.Clerk.addListener(sync);
+  return true;
+}
+const authReady = initAuth();
+
 /* ---------- connect ---------- */
 $("#connectBtn").onclick = async () => {
   if (session) { try { session.close(); } catch {} return offline(); }
   saveKey(); status("connecting…", "busy");
   let apiKey;
   try {
-    const r = await fetch("/api/key", { cache: "no-store" });
+    await authReady;
+    const tok = window.Clerk?.session ? await window.Clerk.session.getToken() : null;
+    const r = await fetch("/api/key", { cache: "no-store", headers: tok ? { Authorization: "Bearer " + tok } : {} });
+    if (r.status === 401) { status("offline"); $("#gate").hidden = false; return setMsg("Sign in to play", "Google or email"); }
     apiKey = (await r.json()).key;
     if (!r.ok || !apiKey) throw new Error("no key");
   } catch { status("error", "err"); return setMsg("No API key on the server", "set GEMINI_API_KEY in Vercel → Settings → Environment Variables"); }
