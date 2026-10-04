@@ -615,14 +615,21 @@ async function initAuth() {
     });
     await load(`https://${fapi}/npm/@clerk/ui@1/dist/ui.browser.js`);
     await load(`https://${fapi}/npm/@clerk/clerk-js@6/dist/clerk.browser.js`, { "data-clerk-publishable-key": pk });
-    await window.Clerk.load({ ui: { ClerkUI: window.__internal_ClerkUICtor }, appearance: CLERK_LOOK });
+    // always come back here after sign-in / sign-up (incl. the Google round trip) and after sign-out,
+    // otherwise a development instance parks you on its own accounts.dev page
+    const home = location.origin + location.pathname;
+    await window.Clerk.load({
+      ui: { ClerkUI: window.__internal_ClerkUICtor }, appearance: CLERK_LOOK,
+      signInForceRedirectUrl: home, signUpForceRedirectUrl: home,
+      signInFallbackRedirectUrl: home, signUpFallbackRedirectUrl: home, afterSignOutUrl: home,
+    });
   } catch (e) { $("#gateMsg").textContent = "Login unavailable: " + e.message; return true; }
   let mounted = null;
   const sync = () => {
     const signedIn = window.Clerk.isSignedIn;
     $("#gate").hidden = signedIn;
     if (signedIn && mounted !== "user") { if (mounted === "in") window.Clerk.unmountSignIn($("#signin")); window.Clerk.mountUserButton($("#userBtn")); mounted = "user"; }
-    if (!signedIn && mounted !== "in") { if (mounted === "user") { window.Clerk.unmountUserButton($("#userBtn")); if (session) { try { session.close(); } catch {} offline(); } } window.Clerk.mountSignIn($("#signin")); mounted = "in"; }
+    if (!signedIn && mounted !== "in") { if (mounted === "user") { window.Clerk.unmountUserButton($("#userBtn")); if (session) { try { session.close(); } catch {} offline(); } } window.Clerk.mountSignIn($("#signin"), { routing: "hash", forceRedirectUrl: location.origin + location.pathname, signUpForceRedirectUrl: location.origin + location.pathname }); mounted = "in"; }
   };
   sync(); window.Clerk.addListener(sync);
   return true;
