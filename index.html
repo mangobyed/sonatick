@@ -351,8 +351,8 @@
 
   <!-- deck: transport, what's next, the drop -->
   <section class="panel deck" data-label="01 DECK">
-    <button class="play" id="playBtn" disabled aria-label="Play / pause">▶</button>
-    <div class="nextmsg" id="nextMsg">Press connect<small>&nbsp;</small></div>
+    <button class="play" id="playBtn" aria-label="Play / pause">▶</button>
+    <div class="nextmsg" id="nextMsg">Press ▶ to start<small>techno, generated live by Google Lyria</small></div>
     <div class="clock mono" id="clock"></div>
     <button class="dropbtn" id="dropBtn" disabled title="Drop on the next beat (D)"><b>DROP</b><small>INSTANT · NEXT BEAT · D</small></button>
     <canvas id="strip" width="2400" height="184"></canvas>
@@ -637,39 +637,49 @@ async function initAuth() {
 const authReady = initAuth();
 
 /* ---------- connect ---------- */
+let connecting = false;
+// Opens the Lyria session (key from /api/key, Clerk token if logged in). Returns true when ready.
+async function connectSession() {
+  if (session) return true;
+  if (connecting) return false;
+  connecting = true; saveKey(); status("connecting…", "busy");
+  try {
+    let apiKey;
+    try {
+      await authReady;
+      const tok = window.Clerk?.session ? await window.Clerk.session.getToken() : null;
+      const r = await fetch("/api/key", { cache: "no-store", headers: tok ? { Authorization: "Bearer " + tok } : {} });
+      if (r.status === 401) { status("offline"); $("#gate").hidden = false; setMsg("Sign in to play", "Google or email"); return false; }
+      apiKey = (await r.json()).key;
+      if (!r.ok || !apiKey) throw new Error("no key");
+    } catch { status("error", "err"); setMsg("No API key on the server", "set GEMINI_API_KEY in Vercel → Settings → Environment Variables"); return false; }
+    try {
+      const ai = new GoogleGenAI({ apiKey, apiVersion: $("#apiVersion").value });
+      session = await ai.live.music.connect({
+        model: "models/lyria-realtime-exp",
+        callbacks: {
+          onmessage: onMessage,
+          onerror: e => { log("error: " + (e?.message || e), "e"); status("error", "err"); },
+          onclose: e => { log("connection closed " + (e?.reason || ""), "w"); offline(); },
+        },
+      });
+      status("connected", "on");
+      $("#connectBtn").textContent = "Disconnect";
+      $("#recBtn").disabled = $("#dropBtn").disabled = false;
+      await send(true);
+      return true;
+    } catch (e) { log("connect failed: " + (e?.message || e) + " (check key / try the other API version in Settings)", "e"); status("error", "err"); session = null; return false; }
+  } finally { connecting = false; }
+}
 $("#connectBtn").onclick = async () => {
   if (session) { try { session.close(); } catch {} return offline(); }
-  saveKey(); status("connecting…", "busy");
-  let apiKey;
-  try {
-    await authReady;
-    const tok = window.Clerk?.session ? await window.Clerk.session.getToken() : null;
-    const r = await fetch("/api/key", { cache: "no-store", headers: tok ? { Authorization: "Bearer " + tok } : {} });
-    if (r.status === 401) { status("offline"); $("#gate").hidden = false; return setMsg("Sign in to play", "Google or email"); }
-    apiKey = (await r.json()).key;
-    if (!r.ok || !apiKey) throw new Error("no key");
-  } catch { status("error", "err"); return setMsg("No API key on the server", "set GEMINI_API_KEY in Vercel → Settings → Environment Variables"); }
-  try {
-    const ai = new GoogleGenAI({ apiKey, apiVersion: $("#apiVersion").value });
-    session = await ai.live.music.connect({
-      model: "models/lyria-realtime-exp",
-      callbacks: {
-        onmessage: onMessage,
-        onerror: e => { log("error: " + (e?.message || e), "e"); status("error", "err"); },
-        onclose: e => { log("connection closed " + (e?.reason || ""), "w"); offline(); },
-      },
-    });
-    status("connected", "on");
-    $("#connectBtn").textContent = "Disconnect";
-    $("#playBtn").disabled = $("#recBtn").disabled = $("#dropBtn").disabled = false;
-    setMsg("Ready", "press play or space");
-    await send(true);
-  } catch (e) { log("connect failed: " + (e?.message || e) + " (check key / try other API version under More)", "e"); status("error", "err"); session = null; }
+  if (await connectSession()) setMsg("Ready", "press ▶ or space");
 };
 function offline() {
-  session = null; playing = false; live = null; nextTime = 0; clockStart = 0;
-  $("#connectBtn").textContent = "Connect"; $("#playBtn").disabled = $("#recBtn").disabled = $("#dropBtn").disabled = true; $("#playBtn").textContent = "▶"; $("#playBtn").classList.remove("on");
-  status("offline"); setMsg("Disconnected", "");
+  flushAudio();
+  session = null; playing = false; live = null; nextTime = 0; clockStart = 0; hold = null; pendingLand = null; pendingReset = null;
+  $("#connectBtn").textContent = "Connect"; $("#recBtn").disabled = $("#dropBtn").disabled = true; $("#playBtn").textContent = "▶"; $("#playBtn").classList.remove("on");
+  status("offline"); setMsg("Disconnected", "press ▶ to start again");
 }
 function onMessage(msg) {
   if (msg.filteredPrompt) log(`prompt blocked: "${msg.filteredPrompt.text}" ${msg.filteredPrompt.filteredReason || ""}`, "e");
@@ -696,15 +706,15 @@ function playChunk(b64) {
   if (pendingReset) {                                              // new context (tempo/key): flush the old queue, quick fade, bar 1 right away
     const t = ctx.currentTime + 1.0, d = duck.gain;                    // 1 s cushion: old groove plays until t, then the new one (no underrun)
     d.cancelScheduledValues(0); d.setValueAtTime(1, t - 0.06); d.linearRampToValueAtTime(0, t - 0.01); d.linearRampToValueAtTime(1, t + 0.03);
-    queued.forEach(q => { try { q.src.stop(t); } catch {} }); queued.length = 0;
+    queued.forEach(q => { try { q.src.stop(t); } catch {} }); queued.length = 0; realEnd = 0; loopBeat = null;
     for (let i = wave.length - 1; i >= 0; i--) if (wave[i].t >= t) wave.splice(i, 1); else wave[i].end = Math.min(wave[i].end, t);
     buildSrcs.forEach(src => { try { src.stop(t); } catch {} }); buildSrcs = []; plannedDrop = null;
-    clockStart = nextTime = t; bpmClock = next.bpm; hist.fill(0); histN = 0; hold = null; pendingLand = null;
+    clockStart = nextTime = t; bpmClock = next.bpm; hist.fill(0); histN = 0; locked = false; bigPhi = null; hold = null; pendingLand = null;
     marks.length = segments.length = 0; segments.push({ startBeat: 0, moment: pendingReset }); pendingReset = null;
   }
   if (hold) return holdChunk(buf);
   if (nextTime < ctx.currentTime) {
-    const t = ctx.currentTime + 1.5;                               // cushion against network jitter
+    const t = ctx.currentTime + (clockStart ? 1.5 : 1.0);           // start fast (1 s); a real underrun rebuffers 1.5 s
     if (!clockStart) { clockStart = t; bpmClock = live?.bpm || next.bpm; }
     else { clockStart += t - nextTime; log(`network hiccup: ${(t - nextTime).toFixed(2)}s silence, grid shifted to stay in tempo`, "w"); }
     nextTime = t;
@@ -731,6 +741,7 @@ function schedule(buf, t, fadeIn) {
   trackBeat(buf.getChannelData(0), buf.getChannelData(1), t);
   lowHops(buf, true);
   recent.push({ t, buf }); while (recent.length > 6) recent.shift();
+  realEnd = Math.max(realEnd, t + buf.duration); loopBeat = null;      // fresh audio: next slow stretch loops the newest beat
   addWave(buf, t);
 }
 // copy [t, t+dur) of already-scheduled audio into a new buffer (null if not available)
@@ -761,6 +772,11 @@ function peakAt(t) {
 
 /* Kick-band energy per 10 ms hop. Used to spot the moment the bass returns in the drop. */
 let lowState = 0, lowBase = [];
+function lowHopsFresh(buf) {
+  const L = buf.getChannelData(0), R = buf.getChannelData(1), out = []; let y = 0;
+  for (let i = 0; i + 480 <= L.length; i += 480) { let e = 0; for (let j = i; j < i + 480; j++) { y += 0.0104 * ((L[j] + R[j]) * .5 - y); e += y * y; } out.push(e / 480); }
+  return out;
+}
 function lowHops(buf, isBase) {
   const L = buf.getChannelData(0), R = buf.getChannelData(1), out = [];
   for (let i = 0; i + 480 <= L.length; i += 480) {
@@ -781,11 +797,17 @@ function lowHops(buf, isBase) {
    - bass early → a grid-locked stutter of the last build beat bridges to the bar;
      bass not here yet when the bar comes → the drop moves one bar later (up to 3 times).
    Times: "stream" = where audio would play with no intervention; play = stream + shift. */
+// Lyria's reaction time (s of audio between sending the drop and the bass coming back), learned per drop.
+let modelLag = 2.5, dropSentStream = 0;
 function startHold(buf) {
   const beat = 60 / bpmClock;
   let B = timeAtBeat(plannedDrop);
   if (B < nextTime + 0.05) B = timeAtBeat(Math.ceil(beatAt(nextTime + 0.05) / 4) * 4);   // missed the planned bar: next one
-  const base = lowBase.length ? lowBase.reduce((a, v) => a + v, 0) / lowBase.length : 0;
+  // baseline = low end *between the kicks* over the last 4 beats of the build (kicks alone would hide the bass)
+  const g = Math.floor(beatAt(nextTime) + 1e-3), pre = grab(timeAtBeat(g - 4), 4 * beat);
+  let base = 0;
+  if (pre) { const H = lowHopsFresh(pre), hop = 480 / SR; let n = 0; for (let i = 0; i < H.length; i++) { const f = ((i * hop) / beat) % 1; if (f >= 0.3) { base += H[i]; n++; } } base = n ? base / n : 0; }
+  if (!base) base = lowBase.length ? lowBase.reduce((a, v) => a + v, 0) / lowBase.length : 0;
   hold = { t0: nextTime, B, cursor: nextTime, shift: 0, chunks: [], len: 0, hops: [], base, moved: 0 };
   holdChunk(buf);
 }
@@ -813,18 +835,23 @@ function playHeld(until) {
 function findBassReturn() {
   const h = hold, beat = 60 / bpmClock, hop = 480 / SR, H = h.hops;
   if (!h.base) return null;
-  // reference = the build's own beats in the held audio (falls back to the pre-hold average)
-  let sum = 0, n = 0;
+  // low end *between the kicks* for every complete held beat
+  const ms = [], ss = [];
   for (let g = Math.ceil(beatAt(h.t0) - 1e-3); ; g++) {
     const s = timeAtBeat(g) - h.t0, i0 = Math.max(0, Math.floor(s / hop)), i1 = Math.floor((s + beat) / hop);
-    if (i1 > H.length) return null;
+    if (i1 > H.length) break;
     if (i1 - i0 < 5) continue;
-    let m = 0; for (let i = i0; i < i1; i++) m += H[i];
-    m /= i1 - i0;
-    const ref = n ? Math.min(h.base, sum / n) : h.base;
-    if (m > 1.4 * ref) return h.t0 + s;                            // first beat where the low end jumps ≥40% (bass back; kick alone dominates this band)
-    sum += m; n++;
+    const k0 = Math.max(i0, Math.floor((s + 0.3 * beat) / hop));    // skip the kick
+    let m = 0; for (let i = k0; i < i1; i++) m += H[i];
+    ms.push(m / Math.max(1, i1 - k0)); ss.push(h.t0 + s);
   }
+  for (let j = 0; j < ms.length; j++) {
+    const pre = j ? ms.slice(0, j).reduce((a, v) => a + v, 0) / j : h.base, ref = Math.min(h.base, pre);
+    if (ms[j] > 1.6 * ref) return ss[j];                            // obvious: bass fills the gaps between kicks
+    // subtle (drone under the build): a step of ≥18% over the build's own level that holds for 2 beats
+    if (j >= 2 && j + 1 < ms.length && Math.min(ms[j], ms[j + 1]) > 1.18 * pre) return ss[j];
+  }
+  return null;
 }
 function holdStep() {
   const h = hold, now = ctx.currentTime, beat = 60 / bpmClock;
@@ -837,12 +864,20 @@ function holdStep() {
   // no bass yet: keep the build going, but hold back the last unfinished beat (it might be where the bass starts)
   playHeld(Math.min(h.B, timeAtBeat(Math.floor(beatAt(heldEnd()))) + h.shift));
   if (now > h.B - 0.12) {
-    if (h.moved < 3) { h.B += 4 * beat; h.moved++; log("drop: bass not back yet, moving the drop one bar later", "w"); }
-    else return land(Sb ?? Math.max(h.t0, h.cursor - h.shift));    // give up waiting: drop with what we have
+    // the bar is here and the bass isn't (clearly) back: drop ON the bar anyway and let the bass come in when
+    // the model gets there. A drop bars late is worse than a bass settling in a moment late. Nothing learned.
+    playHeld(h.B); if (h.cursor < h.B - 1e-3) stutter(h.B);
+    dropSentStream = 0; log("drop: on the bar; bass still on its way", "w");
+    return land(h.B - h.shift);
   }
   if (h.cursor < now + 0.15) stutterBeat();                        // Lyria is slow: don't let it go silent
 }
 function land(Sb) {
+  if (dropSentStream && Sb > dropSentStream) {                     // learn how long the model took this time
+    modelLag = Math.min(6, Math.max(0.5, 0.5 * modelLag + 0.5 * (Sb - dropSentStream)));
+    log(`drop: Lyria reacted in ${(Sb - dropSentStream).toFixed(1)} s (next drop sent ${modelLag.toFixed(1)} s early)`);
+  }
+  dropSentStream = 0;
   const h = hold, B = h.B, buf = heldSlice(Sb, heldEnd());
   hold = null; pendingLand = null;
   if (buf) schedule(buf, B, true);
@@ -896,8 +931,8 @@ document.addEventListener("pointerdown", () => { if (playing) unlockAudio(); }, 
 document.addEventListener("visibilitychange", () => { if (!document.hidden && playing && ctx) ctx.resume().catch(() => {}); });
 
 $("#playBtn").onclick = togglePlay;
-async function togglePlay() {
-  if (!session) return;
+// Build the audio graph. Must run synchronously inside the tap (iOS/Safari only allow audio started by a gesture).
+function ensureAudio() {
   if (!ctx) {
     ctx = new AudioContext({ sampleRate: SR });
     // hp (build thinning/riser) → sub low-shelf → dry + saturated wet → glue comp → duck (pump/gate) → boost → limiter → volume
@@ -916,9 +951,30 @@ async function togglePlay() {
     hp.connect(sub); sub.connect(comp); sub.connect(shaper).connect(wet).connect(comp);
     comp.connect(makeup).connect(duck).connect(boost).connect(limiter).connect(gain).connect(ctx.destination);
   }
-  await ctx.resume();
-  if (playing) { session.pause(); playing = false; hold = null; wave.length = 0; nextTime = 0; clockStart = 0; marks.length = segments.length = 0; $("#playBtn").textContent = "▶"; $("#playBtn").classList.remove("on"); setMsg("Paused", ""); return; }
+  if (ctx.state !== "running") ctx.resume().catch(() => {});
+}
+// Stop everything already queued, with a 30 ms fade (pause / disconnect should be instant, not 2–4 s later).
+function flushAudio() {
+  if (!ctx) return;
+  const t = ctx.currentTime + 0.035, d = duck.gain;
+  d.cancelScheduledValues(0); d.setValueAtTime(d.value, ctx.currentTime); d.linearRampToValueAtTime(0, t); d.setValueAtTime(1, t + 0.01);
+  queued.forEach(q => { try { q.src.stop(t); } catch {} }); queued.length = 0;
+  buildSrcs.forEach(q => { try { q.stop(t); } catch {} }); buildSrcs = [];
+  wave.length = 0; realEnd = 0; loopBeat = null;
+}
+// ▶ = one tap from cold: connect if needed, then play. Space does the same.
+async function togglePlay() {
+  ensureAudio();
+  if (playing) {
+    session?.pause(); flushAudio(); playing = false; hold = null; nextTime = 0; clockStart = 0; marks.length = segments.length = 0; locked = false; bigPhi = null;
+    $("#playBtn").textContent = "▶"; $("#playBtn").classList.remove("on"); setMsg("Paused", "press ▶ to continue"); return;
+  }
+  if (!session) {
+    setMsg("Starting…", "connecting to Lyria");
+    if (!(await connectSession())) return;
+  }
   playing = true; lastBar = -1; $("#playBtn").textContent = "❚❚"; $("#playBtn").classList.add("on");
+  setMsg("Starting…", "first sound in a few seconds");
   segments.push({ startBeat: 0, moment: live?.moment || next.moment });
   if (live && (live.bpm !== next.bpm || live.scale !== next.scale)) await send(true);   // tempo/key changed while paused
   session.play();
@@ -928,6 +984,7 @@ async function togglePlay() {
    kick band AND have a click on top (kicks, not offbeat basslines) are folded onto the beat grid;
    if they sit off-grid, nudge the grid onto them. */
 let lpY = 0, lpH = 0, prevE = 0, prevH = 0, hist = new Float32Array(32), histN = 0;
+let locked = false, bigPhi = null;                               // first lock may jump freely; later big jumps need confirming
 function trackBeat(L, R, t0) {
   if (!clockStart) return;
   const hop = 480, beatSec = 60 / bpmClock;
@@ -943,7 +1000,7 @@ function trackBeat(L, R, t0) {
     const ph = ((t0 + i / SR - clockStart) / beatSec) % 1;
     hist[Math.floor(((ph % 1) + 1) % 1 * 32)] += onset;
   }
-  if (++histN < 3) return;
+  if (++histN < (locked ? 3 : 2)) return;                          // first lock after 2 chunks, then steadier
   const sm = hist.map((v, i) => hist[(i + 31) % 32] + 2 * v + hist[(i + 1) % 32]);
   let k = 0, mean = 0;
   sm.forEach((v, i) => { mean += v / 32; if (v > sm[k]) k = i; });
@@ -951,7 +1008,13 @@ function trackBeat(L, R, t0) {
   const l = sm[(k + 31) % 32], r = sm[(k + 1) % 32], den = l - 2 * sm[k] + r;
   let phi = (k + 0.5 + (den ? 0.5 * (l - r) / den : 0)) / 32;      // sub-bin peak
   if (phi > .5) phi -= 1;
-  if (Math.abs(phi) > 0.02) { clockStart += phi * beatSec * 0.85; hist.fill(0); histN = 0; }
+  // big jumps (≥ 0.2 beat) once locked must show up twice in a row: offbeat hats + bass can fake a kick for a moment
+  if (locked && Math.abs(phi) >= 0.2) {
+    if (bigPhi == null || Math.abs(bigPhi - phi) > 0.08) { bigPhi = phi; hist.fill(0); histN = 0; return; }
+  }
+  bigPhi = null;
+  if (Math.abs(phi) > 0.012) { clockStart += phi * beatSec * (locked ? 0.85 : 1); hist.fill(0); histN = 0; }   // keep the grid within ~5 ms of the kicks
+  locked = true;
 }
 
 /* ---------- moments: local FX on the audio clock ---------- */
@@ -1396,9 +1459,28 @@ function refresh() {
 /* ---------- clock + boundary trigger ---------- */
 const planned = () => plannedDrop != null && next.moment === "drop";
 function nextBoundaryBeat(b) { if (planned()) return plannedDrop; const q = quantBars * 4; return q ? Math.ceil((b + 0.001) / q) * q : b; }
+/* Network late? Never go silent: repeat the last beat, in time, until new audio arrives.
+   Exactly one beat is inserted, so the groove stays in phase and the grid doesn't move. */
+let loops = 0, realEnd = 0, loopBeat = null;
+function guardBuffer() {
+  if (!playing || hold || !nextTime || !clockStart || !ctx) return;
+  if (nextTime - ctx.currentTime > 0.25) return;
+  const beat = 60 / bpmClock;
+  // the beat to repeat = the last beat of *real* Lyria audio (kept for the whole slow stretch)
+  if (!loopBeat || nextTime <= realEnd + 1e-3) loopBeat = grab(realEnd - beat, beat);
+  const last = loopBeat;
+  if (!last) return;
+  const src = ctx.createBufferSource(); src.buffer = last; src.connect(hp); src.start(nextTime);
+  queued.push({ src, end: nextTime + beat });
+  addWave(last, nextTime);
+  nextTime += beat;
+  if (++loops % 4 === 1) log("network slow: looping the last beat until Lyria catches up", "w");
+}
+setInterval(guardBuffer, 100);                                    // also when the tab is in the background (no rAF)
 function loop() {
   requestAnimationFrame(loop);
   const b = nowBeat();
+  guardBuffer();
   if (playing && ctx && ctx.state !== "running") setMsg(`Audio is ${ctx.state}`, "tap anywhere to resume · on iPhone check the silent switch");
   else if (b >= 0) {
     const bar = Math.floor(b / 4);
@@ -1409,7 +1491,9 @@ function loop() {
     if (changed() && (quantBars || planned())) {
       const target = nextBoundaryBeat(b);
       const lockedBeats = (nextTime - ctx.currentTime) * bpmClock / 60;
-      if (b + lockedBeats >= target - 2) send();
+      // planned drop: send early by Lyria's measured reaction time, so the bass is back by the bar
+      const lead = planned() ? 3 + (modelLag + 0.3) * bpmClock / 60 : 2;   // early bass is fine (stutter to the bar); late bass costs a bar
+      if (b + lockedBeats >= target - lead) { if (planned()) dropSentStream = nextTime; send(); }
     }
     if (hold) holdTick();
     pumpTick(b);
