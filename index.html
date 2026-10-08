@@ -266,6 +266,10 @@
   .xy .cross { position: absolute; background: #2a2a2a; pointer-events: none; }
   .axes { display: flex; gap: 14px; font: 500 10px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--dim); margin-top: 8px; }
   .axes select { max-width: 150px; }
+  #toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 80; max-width: 92vw; padding: 12px 16px; background: #000; border: 1px solid #fff;
+           box-shadow: 8px 8px 0 var(--red); font: 500 11px/1.5 var(--mono); letter-spacing: .06em; color: #fff; }
+  #toast[hidden] { display: none; }
+  #toast b { color: var(--red); }
   /* ---------- login gate ---------- */
   #gate { position: fixed; inset: 0; z-index: 90; display: flex; align-items: center; justify-content: center; padding: 24px; overflow-y: auto;
           background: #000 radial-gradient(#141414 1px, transparent 1.2px) 0 0 / 22px 22px; }
@@ -305,6 +309,7 @@
     <div id="gateMsg" class="gatemsg"></div>
   </div>
 </div>
+<div id="toast" role="status" hidden>No sound? Switch off <b>Silent mode</b> — on iPhone it mutes web audio. Headphones and Bluetooth always play.</div>
 <div class="app">
   <!-- top bar: identity, state, set-and-forget controls -->
   <header class="topbar">
@@ -932,8 +937,17 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden && pl
 
 $("#playBtn").onclick = togglePlay;
 // Build the audio graph. Must run synchronously inside the tap (iOS/Safari only allow audio started by a gesture).
+// iPhone/iPad: the silent switch can't be detected, so say it once, on the first play
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+function iosHint() {
+  if (!isIOS) return;
+  try { if (localStorage.getItem("sonatick_ios_hint")) return; localStorage.setItem("sonatick_ios_hint", "1"); } catch {}
+  const el = $("#toast"); el.hidden = false; setTimeout(() => { el.hidden = true; }, 9000);
+}
 function ensureAudio() {
   if (!ctx) {
+    // iOS: ask for the 'playback' session so the silent switch doesn't mute us (Apple's API; no-op elsewhere)
+    try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch {}
     ctx = new AudioContext({ sampleRate: SR });
     // hp (build thinning/riser) → sub low-shelf → dry + saturated wet → glue comp → duck (pump/gate) → boost → limiter → volume
     hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 10; hp.Q.value = 4;
@@ -975,6 +989,7 @@ async function togglePlay() {
   }
   playing = true; lastBar = -1; $("#playBtn").textContent = "❚❚"; $("#playBtn").classList.add("on");
   setMsg("Starting…", "first sound in a few seconds");
+  iosHint();
   segments.push({ startBeat: 0, moment: live?.moment || next.moment });
   if (live && (live.bpm !== next.bpm || live.scale !== next.scale)) await send(true);   // tempo/key changed while paused
   session.play();
